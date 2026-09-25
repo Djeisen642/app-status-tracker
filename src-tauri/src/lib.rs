@@ -2,7 +2,10 @@
 //!
 //! The app is a background tray utility: no taskbar presence, and no visible
 //! window until you ask for one. The webview owns what the panel says (see
-//! `src/main.ts`); this side owns the shell around it.
+//! `src/main.ts`); this side owns the shell around it, and makes the network
+//! requests the webview's CSP deliberately can't.
+
+mod probe;
 
 use tauri::{
     menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem},
@@ -34,8 +37,14 @@ fn position_panel(window: WebviewWindow) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![set_tray_status, position_panel])
+        .invoke_handler(tauri::generate_handler![
+            set_tray_status,
+            position_panel,
+            probe::http_probe,
+        ])
         .setup(|app| {
+            app.manage(probe::ProbeClient::new()?);
+
             // On macOS this is a menu-bar-only utility: keep it out of the Dock
             // and the app switcher by running as an Accessory app.
             #[cfg(target_os = "macos")]

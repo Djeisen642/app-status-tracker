@@ -12,7 +12,7 @@
 
 import { expect, test } from '@playwright/test';
 
-import { startApp } from './harness.ts';
+import { advanceSeconds, startApp } from './harness.ts';
 
 const SHOTS = 'docs/screenshots';
 
@@ -25,6 +25,16 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await startApp(page);
 
     await expect(page.getByText('No services yet')).toBeVisible();
+    await expect(page.locator('#internet')).toHaveAttribute('data-state', 'online');
     await page.screenshot({ path: `${SHOTS}/empty-${colorScheme}.png` });
+  });
+
+  test(`capture: offline (${colorScheme})`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme, reducedMotion: 'reduce' });
+    await startApp(page, { network: 'down' });
+    await advanceSeconds(page, 5);
+
+    await expect(page.locator('#internet')).toHaveAttribute('data-state', 'offline');
+    await page.screenshot({ path: `${SHOTS}/offline-${colorScheme}.png` });
   });
 }

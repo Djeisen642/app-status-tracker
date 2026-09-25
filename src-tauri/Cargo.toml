@@ -22,6 +22,16 @@ tauri-build = { version = "2", features = [] }
 # guarded.
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+# Plain HTTP only, for now: the connectivity probes must not use TLS (a captive
+# portal can only answer an unencrypted request), and the status pages that do
+# need it arrive in phase 1, which is where the TLS backend gets chosen.
+# `system-proxy` so the probes go where the browser's requests go on a network
+# that requires a proxy.
+reqwest = { version = "0.13", default-features = false, features = ["system-proxy"] }
+
+[dev-dependencies]
+serde_json = "1"
 
 [features]
 # This feature is used by the CLI for production builds.

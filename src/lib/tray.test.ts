@@ -52,4 +52,16 @@ describe('formatTrayStatus', () => {
       ]),
     ).toBe('A: major outage · C: partial outage');
   });
+
+  it('puts no connection ahead of every service', () => {
+    expect(formatTrayStatus([{ name: 'GitHub', level: 'major' }], 'offline')).toBe(
+      'Offline: no internet connection',
+    );
+    expect(formatTrayStatus([], 'portal')).toBe('Offline: Wi-Fi sign-in required');
+  });
+
+  it('says nothing about the connection while it is fine or still being checked', () => {
+    expect(formatTrayStatus([], 'checking')).toBe('No services yet');
+    expect(formatTrayStatus([], 'online')).toBe('No services yet');
+  });
 });

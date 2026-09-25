@@ -70,21 +70,25 @@ something as finished or "working" unless you have run these and seen them pass.
 
 ```
 src/
-  main.ts               # PanelController: empty state, close/Esc, tray line
+  main.ts               # PanelController: connection check loop, Internet row, tray line
   styles.css            # Opaque panel; light/dark tokens
   lib/
     status.ts(.test)    # Level: the normalized status model, worstLevel
+    connectivity.ts(.test)  # The internet check: probes, verdicts, offline hysteresis
+    time.ts             # Millisecond constants
     tray.ts(.test)      # The tray's status line
     errors.ts(.test)    # describeError() for native dialogs
     tauri.ts            # Optional native bridge; degrades gracefully in a browser
 src-tauri/
   src/lib.rs            # Tray, panel window, top-right positioning
+  src/probe.rs          # http_probe: one plain-HTTP GET, reported as it came back
   src/main.rs           # Binary entry point
   tauri.conf.json       # Opaque, frameless, alwaysOnTop, skipTaskbar, hidden-until-clicked
   capabilities/         # Least-privilege permission set
 e2e/
   harness.ts            # startApp(): frozen clock, empty storage
   panel.spec.ts         # The panel, driven in a real browser
+  connectivity.spec.ts  # The connection check, with the network routed by Playwright
   capture.spec.ts       # Screenshots into docs/screenshots/, light and dark
 scripts/
   version.ts(.test)     # The version, derived from the commit subjects
@@ -105,10 +109,31 @@ docs/
   desktop run, when it's wrong. Rust returns `{ status, etag, body }`; parsing,
   normalizing and deciding what changed are pure TypeScript in `src/lib/`, where
   Vitest can reach them. Don't move parsing into Rust and don't widen the CSP.
+- **The connection is checked on its own, and everything defers to it.** A
+  vendor can't be judged while the machine is offline, so `connectivity.ts`
+  decides first and the tray line says "Offline" instead of naming services.
+  Three rules there were each chosen against a specific failure:
+  - **Two providers, online if either answers.** One of them having a bad day
+    must not read as the whole internet being down.
+  - **Plain HTTP, redirects not followed, fixed expected answers.** That is the
+    only way to see a captive portal. Don't "upgrade" the probes to HTTPS: a
+    portal then looks like a plain failure, and "sign in to the Wi-Fi" (which
+    you can act on) becomes "offline" (which you can't).
+  - **Offline after two failed rounds, back online after one success.** One
+    dropped round is a Wi-Fi roam, and a status that flickers on those gets
+    ignored. `navigator.onLine === false` skips the wait, because that reading
+    (no interface up at all) is the one it gets right; `true` proves nothing.
+    The probe client has **no TLS backend** (`reqwest` with default features
+    off). Phase 1 needs one for status pages and chooses it then; the default,
+    aws-lc-rs, is a C build nobody has tried on Windows here yet.
 - **`unknown` is the worst level, never a quiet green.** A failed fetch means
   the app is blind. `LEVELS` orders `unknown` above `major` on purpose, and
   nothing may map a failure to `operational`. A status tracker that shows green
   while it can't see is worse than none.
+- **Checks are a chain of timeouts, never an interval.** The connection check
+  schedules its next run when the current one finishes, so after the machine
+  sleeps one pending timeout fires on wake instead of a backlog. It also reruns
+  at once on the window's `online`/`offline` events.
 - **Polling will be slot-like, not a timer per service.** A 30s tick asks which
   services are _due_ (task-tracker's slot lesson): after the lid has been shut
   for three hours, each service is fetched once, not in a burst of queued
@@ -177,7 +202,7 @@ From task-tracker and noticeable-calendar-alert, applied here. Don't undo them.
 - **A status line refreshed only on events is a stale snapshot.** Once polling
   exists, the tray line re-renders on the tick and pushes only when it changed.
 - **A flag set after an `await` is not a guard.** Raise it synchronously, before
-  the first `await`.
+  the first `await`. `checking` in `main.ts` is the live example.
 - **Size the window to its content.** 360×440 today; revisit when rows exist.
 - **Don't assume an input is sorted.** `formatTrayStatus` orders by severity
   itself rather than trusting the caller.
@@ -234,7 +259,10 @@ apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
 
 (`librsvg2-bin` adds `rsvg-convert`, for regenerating icons.)
 
-The sandbox's network policy may also block the status pages themselves. If a
+The sandbox's network policy may also block the status pages themselves, and
+it blocks the connectivity probe endpoints. e2e routes every probe through
+Playwright (`setNetwork` in the harness) for that reason; never let a spec
+depend on the real network. If a
 fixture can't be captured, say so and ask for it; don't fabricate one.
 
 What this environment lacks is a **desktop webview and any real desktop

@@ -15,6 +15,11 @@
   --line: #e2e5ee;
   --accent: #4f7cf0;
 
+  --good: #2f9e63;
+  --warn: #c98a12;
+  --bad: #d23c3c;
+  --idle: #8a90a2;
+
   font-family:
     system-ui,
     -apple-system,
@@ -30,6 +35,10 @@
     --ink: #e8ebf3;
     --ink-dim: #9aa2b6;
     --line: #2a3042;
+
+    --good: #5ecf8d;
+    --warn: #f5c451;
+    --bad: #ff6b6b;
   }
 }
 
@@ -101,6 +110,62 @@ body {
 .icon-button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+.connection {
+  border-bottom: 1px solid var(--line);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+}
+
+.dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--idle);
+}
+
+.row[data-state='online'] .dot {
+  background: var(--good);
+}
+.row[data-state='portal'] .dot {
+  background: var(--warn);
+}
+.row[data-state='offline'] .dot {
+  background: var(--bad);
+}
+
+.row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-level {
+  color: var(--ink-dim);
+  font-size: 12px;
+}
+
+.row[data-state='offline'] .row-level,
+.row[data-state='portal'] .row-level {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.offline-note {
+  margin: 0;
+  padding: 0 16px 12px 36px;
+  color: var(--ink-dim);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .empty {

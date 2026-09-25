@@ -27,6 +27,16 @@
         </button>
       </header>
 
+      <!-- Always first: every other status depends on it. -->
+      <section class="connection" aria-live="polite">
+        <div id="internet" class="row" data-state="checking">
+          <span class="dot" aria-hidden="true"></span>
+          <span class="row-name">Internet</span>
+          <span id="internet-level" class="row-level">checking…</span>
+        </div>
+        <p id="offline-note" class="offline-note" hidden></p>
+      </section>
+
       <section id="empty" class="empty">
         <p class="empty-title">No services yet</p>
         <p class="empty-body">

@@ -12,18 +12,42 @@ and borrows its stack, its tooling and its guardrails wholesale.
 ## Status
 
 **Phase 0: the scaffold.** The app builds, starts, puts an icon in the tray and
-opens an empty panel. It does not fetch anything yet. The plan, and what each
-phase delivers, is in [`docs/future-work.md`](docs/future-work.md).
+opens a panel. The one thing it checks so far is your own internet connection;
+no status pages are fetched yet. The plan, and what each phase delivers, is in
+[`docs/future-work.md`](docs/future-work.md).
 
-| Light                                                   | Dark                                                  |
-| ------------------------------------------------------- | ----------------------------------------------------- |
-| ![Empty panel, light](docs/screenshots/empty-light.png) | ![Empty panel, dark](docs/screenshots/empty-dark.png) |
+| Connected (light)                              | No connection (dark)                                |
+| ---------------------------------------------- | --------------------------------------------------- |
+| ![Connected](docs/screenshots/empty-light.png) | ![No connection](docs/screenshots/offline-dark.png) |
+
+## The internet connection check
+
+Every status page is useless while your own connection is down, and worse than
+useless if a failed fetch is shown as a vendor's outage. So the app checks the
+connection first, and everything else defers to it.
+
+It sends a plain-HTTP request to two connectivity endpoints the OS vendors run
+for exactly this job, `connectivitycheck.gstatic.com/generate_204` (Google) and
+`www.msftconnecttest.com/connecttest.txt` (Microsoft), every 30 seconds while
+online and every 5 to 10 seconds while in doubt:
+
+| What it sees                                                  | What it says     |
+| ------------------------------------------------------------- | ---------------- |
+| Either endpoint answers exactly as expected                   | connected        |
+| An answer that's wrong, or a redirect                         | sign-in required |
+| Both fail twice in a row, or the OS reports no network at all | no connection    |
+
+Plain HTTP is deliberate: a captive portal (hotel, airport, conference Wi-Fi)
+can only intercept an unencrypted request, and intercepting one whose correct
+answer is fixed is how it gets caught. One failed round is ignored, so a Wi-Fi
+roam doesn't flicker the status.
 
 ## Tray menu
 
 Left-click the icon to toggle the panel. Right-click for the menu:
 
-- a status line (currently always "No services yet")
+- a status line: "Offline: no internet connection" or "Offline: Wi-Fi sign-in
+  required" when the connection is the problem, otherwise "No services yet"
 - **Show status**, which opens the panel (the only way in on Linux, where most
   panels never deliver the icon's own click)
 - **Quit**
