@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>App Status Tracker</title>
+    <link rel="icon" type="image/svg+xml" href="./src-tauri/icons/icon-small.svg" />
+    <!--
+      Linked rather than imported from main.ts on purpose: a JS `import` of CSS
+      injects a <style> tag in dev, which the app's `style-src 'self'` CSP
+      blocks. That failure only appears in the desktop webview, never in
+      `pnpm run dev` in a browser.
+    -->
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <!--
+      The window is frameless and opaque, parked top-right: top-left belongs to
+      task-tracker's check-in card, bottom-right to noticeable-calendar-alert.
+    -->
+    <main id="panel" class="panel" aria-labelledby="headline">
+      <header class="panel-head">
+        <img class="brand" src="./src-tauri/icons/icon-small.svg" alt="" aria-hidden="true" />
+        <h1 id="headline" class="headline">Service status</h1>
+        <button id="close" class="icon-button" type="button" aria-label="Close" title="Close (Esc)">
+          ×
+        </button>
+      </header>
+
+      <section id="empty" class="empty">
+        <p class="empty-title">No services yet</p>
+        <p class="empty-body">
+          Services you watch will show up here, with the worst of them on the tray icon.
+        </p>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

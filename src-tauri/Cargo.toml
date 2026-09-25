@@ -1,0 +1,36 @@
+[package]
+name = "app-status-tracker"
+version = "0.1.0"
+description = "Tray utility that watches vendor status pages"
+authors = ["Jason Suttles"]
+edition = "2021"
+rust-version = "1.77.2"
+
+# The library target is what Tauri's mobile/desktop entry points share.
+[lib]
+name = "app_status_tracker_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# No `macos-private-api`, deliberately: the panel is opaque. Transparency on
+# macOS needs that feature *and* `app.macOSPrivateApi` in tauri.conf.json, fails
+# silently with only one of them, and rules out the Mac App Store. A list of
+# statuses doesn't need to float, so the whole trap is avoided rather than
+# guarded.
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-dialog = "2"
+
+[features]
+# This feature is used by the CLI for production builds.
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+# Optimize hard for the "ultra-lightweight, runs all day" goal.
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"
+  role="img" aria-label="App Status Tracker">
+  <title>App Status Tracker</title>
+  <desc>A green status dot with two rings pinging out from it: something is being watched.</desc>
+
+  <defs>
+    <!--
+      userSpaceOnUse throughout. An objectBoundingBox gradient collapses on any
+      shape with a zero-width or zero-height bounding box and silently renders
+      black, a trap the sibling projects hit while rasterizing their icons.
+    -->
+    <linearGradient id="tile" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2b3555" />
+      <stop offset="1" stop-color="#12141b" />
+    </linearGradient>
+
+    <linearGradient id="ring" x1="96" y1="96" x2="416" y2="416" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8fb0ff" />
+      <stop offset="1" stop-color="#4f7cf0" />
+    </linearGradient>
+
+    <radialGradient id="dot" cx="236" cy="236" r="96" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8ef0b3" />
+      <stop offset="1" stop-color="#42c07d" />
+    </radialGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="114" fill="url(#tile)" />
+
+  <!-- A soft inner highlight so the tile doesn't read as flat on dark themes. -->
+  <rect x="6" y="6" width="500" height="500" rx="108" fill="none"
+    stroke="#ffffff" stroke-opacity="0.07" stroke-width="3" />
+
+  <!-- The ping: the outer ring fades, like a signal travelling outwards. -->
+  <circle cx="256" cy="256" r="178" fill="none" stroke="url(#ring)" stroke-width="22"
+    stroke-opacity="0.45" />
+  <circle cx="256" cy="256" r="128" fill="none" stroke="url(#ring)" stroke-width="26" />
+
+  <circle cx="256" cy="256" r="74" fill="url(#dot)" />
+</svg>
