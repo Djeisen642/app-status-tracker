@@ -8,6 +8,7 @@ import {
   observe,
   OFFLINE_AFTER,
   PROBES,
+  portalLocation,
   type ConnectivityState,
   type Probe,
   type ProbeVerdict,
@@ -147,5 +148,34 @@ describe('nextCheckDelay', () => {
   it('keeps checking while offline or behind a portal, so recovery is prompt', () => {
     expect(nextCheckDelay(run(['failed', 'failed']))).toBe(10_000);
     expect(nextCheckDelay(run(['portal']))).toBe(10_000);
+  });
+});
+
+describe('portalLocation', () => {
+  const redirect = (location: string | null) => ({
+    probe: NO_CONTENT,
+    outcome: { kind: 'response' as const, status: 302, location, body: '' },
+  });
+
+  it('returns where the portal redirected', () => {
+    expect(portalLocation([redirect('http://login.hotel/start')])).toBe('http://login.hotel/start');
+  });
+
+  it('resolves a relative redirect against the probe', () => {
+    expect(portalLocation([redirect('/login')])).toBe('http://a.test/login');
+  });
+
+  it('drops anything that is not http(s)', () => {
+    expect(portalLocation([redirect('javascript:alert(1)')])).toBeNull();
+  });
+
+  it('skips probes that were not redirected and takes the first that was', () => {
+    expect(
+      portalLocation([
+        { probe: NO_CONTENT, outcome: { kind: 'error', message: 'timeout' } },
+        redirect(null),
+        redirect('https://portal.example/'),
+      ]),
+    ).toBe('https://portal.example/');
   });
 });

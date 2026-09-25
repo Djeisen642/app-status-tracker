@@ -7,14 +7,55 @@
 
 mod probe;
 
+use std::sync::Mutex;
+
 use tauri::{
     menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, Runtime, WebviewWindow,
+    AppHandle, Emitter, LogicalSize, Manager, Runtime, WebviewWindow,
 };
+use tauri_plugin_opener::OpenerExt;
 
 /// The window label, as declared in `tauri.conf.json`.
 const PANEL: &str = "panel";
+
+/// The panel's size, in logical pixels. Matches `tauri.conf.json`.
+const PANEL_SIZE: LogicalSize<f64> = LogicalSize {
+    width: 360.0,
+    height: 440.0,
+};
+
+/// The popup is the panel's width and only as tall as what it says.
+const POPUP_MIN_HEIGHT: f64 = 72.0;
+
+/// What the one window is being used as.
+///
+/// A second window for the popup would need its own capability set and its own
+/// positioning, and would be one more thing on screen. Instead the same window
+/// shrinks to the popup and grows back into the panel.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Mode {
+    Panel,
+    Popup,
+}
+
+struct WindowMode(Mutex<Mode>);
+
+impl WindowMode {
+    fn get(&self) -> Mode {
+        *self
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn set(&self, mode: Mode) {
+        *self
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = mode;
+    }
+}
 
 /// Holds the disabled status line at the top of the tray menu so the frontend
 /// can keep it current.
@@ -26,24 +67,78 @@ fn set_tray_status(status: String, item: tauri::State<'_, StatusMenuItem>) -> Re
     item.0.set_text(status).map_err(|err| err.to_string())
 }
 
-/// Park the panel in the top-right corner of the best available display.
+/// Show the popup, `height` logical pixels tall, *without* taking focus.
+///
+/// Returns `false`, and changes nothing, when the panel is already open: it
+/// says the same thing, and shrinking it into a popup under the user's cursor
+/// would be worse than not popping up at all.
 #[tauri::command]
-fn position_panel(window: WebviewWindow) -> Result<(), String> {
-    position_top_right(&window);
-    Ok(())
+fn present_popup(
+    window: WebviewWindow,
+    height: f64,
+    mode: tauri::State<'_, WindowMode>,
+) -> Result<bool, String> {
+    if window.is_visible().unwrap_or(false) && mode.get() == Mode::Panel {
+        return Ok(false);
+    }
+    mode.set(Mode::Popup);
+
+    // Not focusable *before* it is shown: on Windows this is WS_EX_NOACTIVATE,
+    // so the popup appears over whatever you are typing into without taking the
+    // keyboard from it. It arrives unbidden from a timer; stealing focus there
+    // would turn a status notice into lost keystrokes.
+    // Ignored on failure: a popup that might take focus beats no popup at all.
+    let _ = window.set_focusable(false);
+    let height = height.clamp(POPUP_MIN_HEIGHT, PANEL_SIZE.height);
+    place_top_right(&window, LogicalSize::new(PANEL_SIZE.width, height));
+    window.show().map_err(|err| err.to_string())?;
+    Ok(true)
+}
+
+/// Grow the window into the full panel and focus it: the popup was clicked.
+#[tauri::command]
+fn present_panel(app: AppHandle) {
+    show_panel(&app);
+}
+
+/// Open a status page (or a captive portal's sign-in page) in the browser.
+///
+/// The URL came off the network, so this is where it is held to http(s): no
+/// `file:`, no custom protocol handlers, nothing else the OS would launch. The
+/// opener plugin is driven from here, not from JavaScript, so it needs no
+/// capability scope at all.
+#[tauri::command]
+fn open_url(app: AppHandle, url: String) -> Result<(), String> {
+    let url = parse_web_url(&url)?;
+    app.opener()
+        .open_url(url.as_str(), None::<&str>)
+        .map_err(|err| err.to_string())
+}
+
+fn parse_web_url(raw: &str) -> Result<reqwest::Url, String> {
+    let url = reqwest::Url::parse(raw).map_err(|err| format!("Not a URL: {err}"))?;
+    match url.scheme() {
+        "http" | "https" if url.host_str().is_some() => Ok(url),
+        "http" | "https" => Err("The URL has no host.".to_owned()),
+        other => Err(format!("Only web pages can be opened, not {other}:// URLs")),
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             set_tray_status,
-            position_panel,
+            present_popup,
+            present_panel,
+            open_url,
             probe::http_probe,
         ])
         .setup(|app| {
             app.manage(probe::ProbeClient::new()?);
+            app.manage(WindowMode(Mutex::new(Mode::Panel)));
 
             // On macOS this is a menu-bar-only utility: keep it out of the Dock
             // and the app switcher by running as an Accessory app.
@@ -107,7 +202,7 @@ pub fn run() {
             // noticeable-calendar-alert: two utilities in one corner means
             // ignoring both.
             if let Some(window) = app.get_webview_window(PANEL) {
-                position_top_right(&window);
+                place_top_right(&window, PANEL_SIZE);
             }
 
             Ok(())
@@ -119,22 +214,31 @@ pub fn run() {
 /// Show and focus the panel. Everything that shows it is a click the user just
 /// made, so there is no attention request: flashing the taskbar for a window
 /// someone asked for is nagging them about their own click.
+///
+/// Also how a showing popup becomes the panel: the window is made focusable
+/// again, grown back to full size, and the webview told to switch what it draws.
 fn show_panel<R: Runtime>(app: &AppHandle<R>) {
     let Some(window) = app.get_webview_window(PANEL) else {
         return;
     };
+    app.state::<WindowMode>().set(Mode::Panel);
+    let _ = app.emit("show-panel", ());
+    let _ = window.set_focusable(true);
     // Position before show: on a multi-monitor setup the window can otherwise
     // land on the small primary display instead of the largest screen.
-    position_top_right(&window);
+    place_top_right(&window, PANEL_SIZE);
     let _ = window.show();
     let _ = window.set_focus();
 }
 
+/// A tray click closes the panel if it is open, and otherwise opens it,
+/// including over a showing popup, which it replaces.
 fn toggle_panel<R: Runtime>(app: &AppHandle<R>) {
     let Some(window) = app.get_webview_window(PANEL) else {
         return;
     };
-    if window.is_visible().unwrap_or(false) {
+    let visible = window.is_visible().unwrap_or(false);
+    if visible && app.state::<WindowMode>().get() == Mode::Panel {
         let _ = window.hide();
     } else {
         show_panel(app);
@@ -144,17 +248,24 @@ fn toggle_panel<R: Runtime>(app: &AppHandle<R>) {
 /// Inset from the monitor edge, in physical pixels.
 const MARGIN: i32 = 24;
 
-/// Anchor the window against the top-right corner of the best available display.
-fn position_top_right<R: Runtime>(window: &WebviewWindow<R>) {
+/// Size the window and anchor it against the top-right corner of the best
+/// available display.
+///
+/// The corner is computed from the size being *set*, not read back from the
+/// window: a resize isn't guaranteed to have landed by the next call, and a
+/// stale width would park a shrinking popup short of the corner. Moved first,
+/// then sized, so a logical size is scaled by the target display's DPI rather
+/// than the one the window is leaving.
+fn place_top_right<R: Runtime>(window: &WebviewWindow<R>, size: LogicalSize<f64>) {
     let Some(monitor) = target_monitor(window) else {
-        return;
-    };
-    let Ok(size) = window.outer_size() else {
+        let _ = window.set_size(size);
         return;
     };
 
-    let (x, y) = top_right(*monitor.position(), *monitor.size(), size, MARGIN);
+    let physical = size.to_physical::<u32>(monitor.scale_factor());
+    let (x, y) = top_right(*monitor.position(), *monitor.size(), physical, MARGIN);
     let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+    let _ = window.set_size(size);
 }
 
 /// Where the window's top-left corner goes to sit `margin` in from the
@@ -204,7 +315,7 @@ mod tests {
     use super::*;
     use tauri::{PhysicalPosition, PhysicalSize};
 
-    const PANEL_SIZE: PhysicalSize<u32> = PhysicalSize {
+    const WINDOW: PhysicalSize<u32> = PhysicalSize {
         width: 360,
         height: 440,
     };
@@ -214,7 +325,7 @@ mod tests {
         let at = top_right(
             PhysicalPosition::new(0, 0),
             PhysicalSize::new(1920, 1080),
-            PANEL_SIZE,
+            WINDOW,
             MARGIN,
         );
         assert_eq!(at, (1920 - 360 - 24, 24));
@@ -225,7 +336,7 @@ mod tests {
         let at = top_right(
             PhysicalPosition::new(-2560, -200),
             PhysicalSize::new(2560, 1440),
-            PANEL_SIZE,
+            WINDOW,
             MARGIN,
         );
         assert_eq!(at, (-360 - 24, -200 + 24));
@@ -236,10 +347,20 @@ mod tests {
         let at = top_right(
             PhysicalPosition::new(100, 0),
             PhysicalSize::new(300, 800),
-            PANEL_SIZE,
+            WINDOW,
             MARGIN,
         );
         assert_eq!(at, (100, 24));
+    }
+
+    #[test]
+    fn opens_only_web_pages() {
+        assert!(parse_web_url("https://www.githubstatus.com/").is_ok());
+        assert!(parse_web_url("http://login.hotel/start").is_ok());
+        assert!(parse_web_url("file:///C:/Windows/System32/calc.exe").is_err());
+        assert!(parse_web_url("javascript:alert(1)").is_err());
+        assert!(parse_web_url("ms-settings:network").is_err());
+        assert!(parse_web_url("not a url").is_err());
     }
 
     #[test]

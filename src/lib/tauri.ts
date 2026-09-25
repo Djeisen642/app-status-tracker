@@ -16,8 +16,8 @@ export function isTauri(): boolean {
 }
 
 /**
- * Hide the panel. Showing it is the tray's job (`src-tauri/src/lib.rs`),
- * because every way in is a click on the tray.
+ * Hide the window, whether it is showing the panel or the popup. Showing the
+ * panel is the tray's job (`src-tauri/src/lib.rs`).
  */
 export async function hidePanel(): Promise<void> {
   if (!isTauri()) return;
@@ -47,6 +47,52 @@ export async function probeUrl(url: string): Promise<ProbeOutcome> {
   } catch (error) {
     return { kind: 'error', message: error instanceof Error ? error.message : String(error) };
   }
+}
+
+/**
+ * Show the popup, `height` CSS pixels tall, without taking focus.
+ *
+ * Resolves `false` when the panel is already open and nothing was shown. In a
+ * browser there is no window to manage, so the page itself becomes the popup.
+ */
+export async function presentPopup(height: number): Promise<boolean> {
+  if (!isTauri()) return true;
+
+  const { invoke } = await import('@tauri-apps/api/core');
+  return await invoke<boolean>('present_popup', { height });
+}
+
+/** Grow the popup into the full panel, focused. Rust announces it with `show-panel`. */
+export async function presentPanel(): Promise<void> {
+  if (!isTauri()) return;
+
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('present_panel');
+}
+
+/** Called whenever the window becomes the panel: a tray click, or the popup clicked. */
+export async function onShowPanel(handler: () => void): Promise<void> {
+  if (!isTauri()) return;
+
+  const { listen } = await import('@tauri-apps/api/event');
+  await listen('show-panel', () => {
+    handler();
+  });
+}
+
+/**
+ * Open a status page in the browser. Rust holds the URL to http(s) first; the
+ * browser build gets the same check here, since it has no Rust to do it.
+ */
+export async function openUrl(url: string): Promise<void> {
+  if (isTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('open_url', { url });
+    return;
+  }
+
+  const protocol = new URL(url).protocol;
+  if (protocol === 'http:' || protocol === 'https:') window.open(url, '_blank', 'noopener');
 }
 
 /** Update the tray's status line. */

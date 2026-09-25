@@ -70,25 +70,27 @@ something as finished or "working" unless you have run these and seen them pass.
 
 ```
 src/
-  main.ts               # PanelController: connection check loop, Internet row, tray line
+  main.ts               # PanelController: connection check loop, Internet row, popup, tray line
   styles.css            # Opaque panel; light/dark tokens
   lib/
     status.ts(.test)    # Level: the normalized status model, worstLevel
     connectivity.ts(.test)  # The internet check: probes, verdicts, offline hysteresis
+    alerts.ts(.test)    # The popup: which bad states show, and when they show again
     time.ts             # Millisecond constants
     tray.ts(.test)      # The tray's status line
     errors.ts(.test)    # describeError() for native dialogs
     tauri.ts            # Optional native bridge; degrades gracefully in a browser
 src-tauri/
-  src/lib.rs            # Tray, panel window, top-right positioning
+  src/lib.rs            # Tray, the window's two modes (panel/popup), open_url
   src/probe.rs          # http_probe: one plain-HTTP GET, reported as it came back
   src/main.rs           # Binary entry point
   tauri.conf.json       # Opaque, frameless, alwaysOnTop, skipTaskbar, hidden-until-clicked
   capabilities/         # Least-privilege permission set
 e2e/
-  harness.ts            # startApp(): frozen clock, empty storage
+  harness.ts            # startApp(), setNetwork(), advanceToNextCheck()
   panel.spec.ts         # The panel, driven in a real browser
   connectivity.spec.ts  # The connection check, with the network routed by Playwright
+  popup.spec.ts         # The popup: raise, auto-close, dismiss, click through
   capture.spec.ts       # Screenshots into docs/screenshots/, light and dark
 scripts/
   version.ts(.test)     # The version, derived from the commit subjects
@@ -138,10 +140,45 @@ docs/
   services are _due_ (task-tracker's slot lesson): after the lid has been shut
   for three hours, each service is fetched once, not in a burst of queued
   timers. Never replace it with `setInterval` per service.
-- **Notify on transitions, and persist what you've already said.** Phase 2
-  keys notifications on `(service, incidentId, level)` and writes last-known
-  state atomically. Without that, every relaunch during a long incident
-  re-notifies. This mirrors task-tracker's persisted `last_check_in`.
+- **A bad state pops up once, as a small card with a link.** When a check goes
+  bad, the one window shrinks to a popup in the top-right corner, with a link
+  to the page that explains it (the status page; for a captive portal, the
+  sign-in page it redirected to). The rules live in `alerts.ts` and each
+  answers a specific annoyance:
+  - **It pops on a transition, not on every check.** An alert's `key` is the
+    check, the level and the incident, so the same outage re-checked keeps its
+    key and stays quiet, while a worse level or a new incident pops again.
+  - **It closes itself on recovery.** A popup saying GitHub is down after
+    GitHub came back is a lie you have to clean up.
+  - **Dismissed stays dismissed while the outage lasts**, and is forgotten when
+    it clears, so the next outage of the same kind pops again.
+  - **It doesn't pop over an open panel.** The panel already says it; the
+    alerts are acknowledged instead (`present_popup` returns `false`).
+  - **It doesn't auto-hide on a timer.** Outages matter most when you were
+    away from the desk, which is exactly when a timed toast would be gone.
+    It is not a native OS notification: those land in the OS notification
+    center, and what clicking one does differs per platform. The ask was a card
+    with a link on it, which this app draws and controls itself. Phase 2 still
+    has to persist what has been shown, so a relaunch mid-incident doesn't pop
+    it again (task-tracker's persisted `last_check_in`).
+- **The popup never takes focus.** It arrives from a timer while you are typing
+  somewhere else. `present_popup` calls `set_focusable(false)` _before_
+  `show()`, which on Windows is `WS_EX_NOACTIVATE`, so the popup appears
+  without taking the keyboard. `show_panel` sets it focusable again. Don't
+  reorder those, and don't add `set_focus` or an attention request to the popup
+  path.
+- **One window, two modes, and Rust knows which.** A second window for the
+  popup would need its own capability set and positioning. Rust keeps the mode
+  (`WindowMode`) because a tray click must act differently on a showing popup
+  (grow it into the panel) than on an open panel (close it). The webview is
+  told with the `show-panel` event. The popup is laid out off-screen in panel
+  mode rather than `display: none`, so it can be measured before the window is
+  resized to fit it.
+- **Links open through `open_url` in Rust, held to http(s).** The URL came off
+  the network (a status page, or a portal's `Location` header). `parse_web_url`
+  refuses `file:`, `javascript:`, `ms-settings:` and anything else the OS
+  would launch. The opener plugin is called from Rust only; JavaScript has no
+  opener permission.
 - **The panel is opaque, deliberately.** Transparency on macOS needs
   `app.macOSPrivateApi` in `tauri.conf.json` _and_ the `macos-private-api` Cargo
   feature, fails silently with only one, and rules out the Mac App Store. A list
@@ -151,8 +188,7 @@ docs/
   check-in card; bottom-right is noticeable-calendar-alert. Two utilities in one
   corner means ignoring both.
 - **Showing the panel never requests attention.** Every way to open it is a
-  click the user just made. Status changes go to native notifications (phase 2),
-  not to a window that steals focus: nobody types into an outage.
+  click the user just made. Nothing in the app requests attention.
 - **The panel does not hide on blur (yet).** Clicking the tray icon blurs the
   panel before the click arrives, so a naive hide-on-blur turns "click to close"
   into "click to reopen". It needs a debounce and a real desktop to test on.
@@ -262,7 +298,14 @@ apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
 The sandbox's network policy may also block the status pages themselves, and
 it blocks the connectivity probe endpoints. e2e routes every probe through
 Playwright (`setNetwork` in the harness) for that reason; never let a spec
-depend on the real network. If a
+depend on the real network.
+
+**A routed `fetch` resolves on real time, not the fake clock.** Advancing the
+clock fires a check's timer, but the check finishes, and schedules the next
+one, some real milliseconds later. Advance again before then and the next
+check never fires: a race that passed most runs and failed some. Use
+`advanceToNextCheck`, which waits for the Internet row's "Last checked" time to
+move, and give it enough seconds to reach a scheduled check. If a
 fixture can't be captured, say so and ask for it; don't fabricate one.
 
 What this environment lacks is a **desktop webview and any real desktop

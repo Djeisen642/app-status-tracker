@@ -18,6 +18,7 @@ Status keys: **done** · **partial** · **todo**
 | done   | Opaque, frameless panel parked top-right on the largest display; closes on Esc or ×.                                                                                                                                                                                                                                                                                                                                                                |
 | done   | The status model (`Level`, `worstLevel`) and the tray line (`formatTrayStatus`), tested.                                                                                                                                                                                                                                                                                                                                                            |
 | done   | **Internet connection check.** Plain-HTTP probes to Google's and Microsoft's connectivity endpoints, made from Rust (`probe.rs`, no redirects followed, 5s timeout, 1 KB body cap) and judged in `connectivity.ts`. Online if either answers correctly, captive portal if an answer is wrong or a redirect, offline after two failed rounds (or at once if the OS reports no network). Shown as the panel's first row and overriding the tray line. |
+| done   | **A popup when a check goes bad.** The window shrinks to a small card in the top-right corner, shown without taking focus, with a link to the page that explains it. Pops on a transition, closes itself on recovery, stays dismissed until the next outage, doesn't pop over an open panel. Clicking it opens the panel. The internet check is the only check wired to it so far; services join in phase 1.                                        |
 | done   | Two icon masters, with the small one hand-tuned for 16–32px.                                                                                                                                                                                                                                                                                                                                                                                        |
 
 ## Above the MVP line
@@ -35,12 +36,12 @@ Status keys: **done** · **partial** · **todo**
 
 ### Phase 2: tell me when it changes
 
-| Status | Item                                                                                                                                                                                    |
-| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| todo   | Native notifications on transitions only, keyed on `(service, incidentId, level)`. Recovery notifies too.                                                                               |
-| todo   | Last-known state persisted to `state.json` (atomic write), so a relaunch mid-incident doesn't re-notify about the incident you already know about.                                      |
-| todo   | While the connection check says offline or portal, services show as on hold rather than unknown, and no service notification fires; one notification for the connection itself instead. |
-| todo   | Settle the history log format (see below) so nothing is lost before it's built.                                                                                                         |
+| Status | Item                                                                                                                                                                 |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| todo   | Each service produces an `Alert` (`alerts.ts`), keyed on `(service, level, incidentId)`, linking to its status page, so the popup covers services too.               |
+| todo   | Popup state persisted to `state.json` (atomic write), so a relaunch mid-incident doesn't pop again for the incident you already dismissed.                           |
+| todo   | While the connection check says offline or portal, services show as on hold rather than unknown, and raise no alerts of their own; the connection's alert covers it. |
+| todo   | Settle the history log format (see below) so nothing is lost before it's built.                                                                                      |
 
 ### Phase 3: settings
 
@@ -111,6 +112,15 @@ desktop webview.
   unknown; if not, a proxied network reads as offline.
 - **Captive portals.** Detection is unit tested against the shapes portals use
   (redirects, a login page where a 204 belonged) but has never met a real one.
-- **Windows toasts (phase 2).** A notification from an unpackaged `tauri dev`
-  build is attributed to the wrong app; only the installed MSI registers the
-  proper AppUserModelID. Check on an installed build, not a dev one.
+- **The popup must not take focus.** `set_focusable(false)` before `show()`
+  is `WS_EX_NOACTIVATE` on Windows, and tao then shows with `SW_SHOW`. Whether
+  that combination leaves your keyboard where it was is the first thing to
+  check on a real desktop: type into another app while pulling the network
+  cable. macOS and Linux implement `set_focusable` differently again.
+- **Clicking a non-activating window.** The popup's × and link have to work
+  in a window that refuses activation. WebView2 should still deliver the
+  clicks; nobody has tried it.
+- **Resizing between modes.** The window is moved then resized when it
+  switches between the 360×440 panel and the popup. On a mixed-DPI
+  multi-monitor setup the logical-to-physical conversion is the part most
+  likely to be off.

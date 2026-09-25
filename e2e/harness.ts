@@ -7,7 +7,7 @@
  * No test-only hooks leak into the app itself. Keep it that way.
  */
 
-import type { Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 
 import { PROBES } from '../src/lib/connectivity.ts';
 
@@ -32,8 +32,9 @@ export async function startApp(page: Page, options: SeedOptions = {}): Promise<v
     localStorage.clear();
   });
   await page.goto('/');
-  // Let startup awaits flush.
+  // Let startup awaits flush, then wait for the first check to land.
   await page.clock.runFor(100);
+  await expect(page.locator('#internet')).toHaveAttribute('title', /Last checked/);
 }
 
 /**
@@ -53,7 +54,19 @@ export async function setNetwork(page: Page, network: Network): Promise<void> {
   }
 }
 
-/** Advance the simulated clock by `seconds`, letting the check's timers fire. */
-export async function advanceSeconds(page: Page, seconds: number): Promise<void> {
+/**
+ * Advance the simulated clock by `seconds`, which must reach the next scheduled
+ * check, and wait for that check to finish.
+ *
+ * Firing the timer is not enough. The probes are real `fetch`es answered by
+ * Playwright's router on *real* time, so the check completes, and schedules
+ * the one after it, some real milliseconds later. Advancing the fake clock
+ * again before then skips the next check entirely. So wait for the Internet
+ * row's "Last checked" time to move, which it does at the end of every round.
+ */
+export async function advanceToNextCheck(page: Page, seconds: number): Promise<void> {
+  const row = page.locator('#internet');
+  const before = (await row.getAttribute('title')) ?? '';
   await page.clock.runFor(seconds * 1000);
+  await expect(row).not.toHaveAttribute('title', before);
 }

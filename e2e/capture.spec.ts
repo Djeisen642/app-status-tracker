@@ -12,7 +12,7 @@
 
 import { expect, test } from '@playwright/test';
 
-import { advanceSeconds, startApp } from './harness.ts';
+import { advanceToNextCheck, startApp } from './harness.ts';
 
 const SHOTS = 'docs/screenshots';
 
@@ -29,10 +29,23 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await page.screenshot({ path: `${SHOTS}/empty-${colorScheme}.png` });
   });
 
-  test(`capture: offline (${colorScheme})`, async ({ page }) => {
+  test(`capture: the offline popup (${colorScheme})`, async ({ page }) => {
     await page.emulateMedia({ colorScheme, reducedMotion: 'reduce' });
     await startApp(page, { network: 'down' });
-    await advanceSeconds(page, 5);
+    await advanceToNextCheck(page, 5);
+
+    const popup = page.locator('#popup');
+    await expect(popup).toBeVisible();
+    // The real window is sized to the popup, so capture just that.
+    await popup.screenshot({ path: `${SHOTS}/popup-offline-${colorScheme}.png` });
+  });
+
+  test(`capture: the panel, offline (${colorScheme})`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme, reducedMotion: 'reduce' });
+    await startApp(page, { network: 'down' });
+    await advanceToNextCheck(page, 5);
+    // Clicking the popup is how you get from it to the panel.
+    await page.locator('#popup').getByText('No internet connection').click();
 
     await expect(page.locator('#internet')).toHaveAttribute('data-state', 'offline');
     await page.screenshot({ path: `${SHOTS}/offline-${colorScheme}.png` });

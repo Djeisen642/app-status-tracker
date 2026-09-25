@@ -92,6 +92,29 @@ export function combineVerdicts(verdicts: readonly ProbeVerdict[]): ProbeVerdict
   return 'failed';
 }
 
+/**
+ * Where a captive portal sent a probe, resolved to an absolute http(s) URL, or
+ * `null` if no probe was redirected anywhere usable.
+ *
+ * The header comes from whatever sits on the network, so anything that isn't
+ * plain http(s) (a `javascript:` URL, garbage) is dropped here, and Rust
+ * checks the scheme again before opening it.
+ */
+export function portalLocation(
+  results: readonly { probe: Probe; outcome: ProbeOutcome }[],
+): string | null {
+  for (const { probe, outcome } of results) {
+    if (outcome.kind !== 'response' || outcome.location === null) continue;
+    try {
+      const url = new URL(outcome.location, probe.url);
+      if (url.protocol === 'http:' || url.protocol === 'https:') return url.href;
+    } catch {
+      // Unparseable: try the next probe.
+    }
+  }
+  return null;
+}
+
 export type Connectivity = 'checking' | 'online' | 'offline' | 'portal';
 
 export interface ConnectivityState {

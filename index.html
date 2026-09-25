@@ -13,11 +13,20 @@
     -->
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
-  <body>
+  <body data-mode="panel">
     <!--
       The window is frameless and opaque, parked top-right: top-left belongs to
       task-tracker's check-in card, bottom-right to noticeable-calendar-alert.
     -->
+    <!--
+      The popup: the same window shrunk to a card when a check goes bad. Laid
+      out off-screen in panel mode rather than display:none, so its height can
+      be measured before the window is resized to fit it.
+    -->
+    <section id="popup" class="popup" aria-live="assertive" aria-label="Status alerts">
+      <ul id="popup-list" class="popup-list"></ul>
+    </section>
+
     <main id="panel" class="panel" aria-labelledby="headline">
       <header class="panel-head">
         <img class="brand" src="./src-tauri/icons/icon-small.svg" alt="" aria-hidden="true" />

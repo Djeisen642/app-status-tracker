@@ -16,7 +16,7 @@ opens a panel. The one thing it checks so far is your own internet connection;
 no status pages are fetched yet. The plan, and what each phase delivers, is in
 [`docs/future-work.md`](docs/future-work.md).
 
-| Connected (light)                              | No connection (dark)                                |
+| The panel, connected                           | The panel, offline                                  |
 | ---------------------------------------------- | --------------------------------------------------- |
 | ![Connected](docs/screenshots/empty-light.png) | ![No connection](docs/screenshots/offline-dark.png) |
 
@@ -42,9 +42,33 @@ can only intercept an unencrypted request, and intercepting one whose correct
 answer is fixed is how it gets caught. One failed round is ignored, so a Wi-Fi
 roam doesn't flicker the status.
 
+## The popup
+
+When a check goes bad, a small card appears in the top-right corner of your
+largest screen:
+
+![The offline popup](docs/screenshots/popup-offline-light.png)
+
+- **It links to the page that explains it**: the status page for a service,
+  or, on hotel or airport Wi-Fi, the sign-in page the network is holding you
+  at. There's nothing to link to when you're simply offline.
+- **It doesn't take your keyboard.** It shows up over whatever you're typing
+  into and leaves the focus there.
+- **It appears once per outage.** It closes itself when things recover. Close
+  it with × and it stays closed until the next outage. A worse level or a new
+  incident is a new outage.
+- **It stays until you deal with it.** It doesn't fade out on a timer, because
+  an outage matters most when you were away from the desk.
+- **Click it to open the full panel.** It doesn't appear at all while the
+  panel is already open.
+
+The internet connection is the only check that can raise it so far. Services
+join it in phase 1.
+
 ## Tray menu
 
-Left-click the icon to toggle the panel. Right-click for the menu:
+Left-click the icon to toggle the panel (or to grow a showing popup into it).
+Right-click for the menu:
 
 - a status line: "Offline: no internet connection" or "Offline: Wi-Fi sign-in
   required" when the connection is the problem, otherwise "No services yet"

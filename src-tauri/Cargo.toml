@@ -22,6 +22,9 @@ tauri-build = { version = "2", features = [] }
 # guarded.
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-dialog = "2"
+# Driven from Rust only (`open_url` in lib.rs), so JavaScript gets no opener
+# permission and no scope to get wrong.
+tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 # Plain HTTP only, for now: the connectivity probes must not use TLS (a captive
 # portal can only answer an unencrypted request), and the status pages that do
