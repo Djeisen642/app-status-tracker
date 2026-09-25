@@ -5,6 +5,7 @@
 //! `src/main.ts`); this side owns the shell around it, and makes the network
 //! requests the webview's CSP deliberately can't.
 
+mod fetch;
 mod probe;
 
 use std::sync::Mutex;
@@ -135,9 +136,11 @@ pub fn run() {
             present_panel,
             open_url,
             probe::http_probe,
+            fetch::fetch_status,
         ])
         .setup(|app| {
             app.manage(probe::ProbeClient::new()?);
+            app.manage(fetch::FetchClient::new()?);
             app.manage(WindowMode(Mutex::new(Mode::Panel)));
 
             // On macOS this is a menu-bar-only utility: keep it out of the Dock

@@ -1,9 +1,9 @@
 /**
  * The panel controller.
  *
- * The internet connection is checked for real: every status the app will ever
- * show depends on it, so it comes first. Services themselves arrive in phase 1
- * (see `docs/future-work.md`), so their list is still empty.
+ * Each round checks the internet connection first, because every other status
+ * depends on it, then fetches whichever services are due. One chain of
+ * timeouts drives the lot.
  *
  * The one window has two modes. The panel is what a tray click opens. The
  * popup is the same window shrunk to a small card, shown without focus when a
@@ -37,11 +37,25 @@ import {
   onShowPanel,
   openUrl,
   presentPanel,
+  fetchStatus,
   presentPopup,
   probeUrl,
   setTrayStatus,
   showError,
 } from './lib/tauri.ts';
+import {
+  apiUrl,
+  applyFetch,
+  DEFAULT_SERVICES,
+  displayLevel,
+  INITIAL_SERVICE,
+  isDue,
+  serviceAlert,
+  serviceSubtitle,
+  type ServiceConfig,
+  type ServiceState,
+} from './lib/services.ts';
+import { LEVEL_LABELS } from './lib/status.ts';
 import { formatTrayStatus, type TrayEntry } from './lib/tray.ts';
 
 function mustGet<T extends HTMLElement>(id: string): T {
@@ -57,8 +71,10 @@ class PanelController {
   private readonly internetLevel = mustGet('internet-level');
   private readonly offlineNote = mustGet('offline-note');
   private readonly popupList = mustGet<HTMLUListElement>('popup-list');
+  private readonly serviceList = mustGet<HTMLUListElement>('service-list');
 
-  private readonly services: readonly TrayEntry[] = [];
+  private readonly services: readonly ServiceConfig[] = DEFAULT_SERVICES;
+  private serviceStates = new Map<string, ServiceState>();
   private connectivity: ConnectivityState = INITIAL_CONNECTIVITY;
   /** Where a captive portal last redirected a probe, for the sign-in link. */
   private portalUrl: string | null = null;
@@ -101,6 +117,33 @@ class PanelController {
   }
 
   /**
+   * Fetch every service that is due, in parallel.
+   *
+   * Driven by the connection check's own timer rather than one of its own:
+   * one chain of timeouts for the whole app, and each service's `nextAt`
+   * decides whether this round includes it.
+   */
+  private async pollServices(): Promise<void> {
+    const now = Date.now();
+    const due = this.services.filter((service) => isDue(this.stateOf(service), now));
+    const results = await Promise.all(
+      due.map(async (service) => ({
+        service,
+        outcome: await fetchStatus(apiUrl(service), this.stateOf(service).etag),
+      })),
+    );
+    const next = new Map(this.serviceStates);
+    for (const { service, outcome } of results) {
+      next.set(service.id, applyFetch(service, this.stateOf(service), outcome, Date.now()));
+    }
+    this.serviceStates = next;
+  }
+
+  private stateOf(service: ServiceConfig): ServiceState {
+    return this.serviceStates.get(service.id) ?? INITIAL_SERVICE;
+  }
+
+  /**
    * Run one round of probes, then schedule the next.
    *
    * A chain of timeouts, not an interval: after the machine sleeps, the one
@@ -123,6 +166,9 @@ class PanelController {
       const verdicts = results.map(({ probe, outcome }) => judgeProbe(probe, outcome));
       this.connectivity = observe(this.connectivity, combineVerdicts(verdicts), browserOffline);
       this.portalUrl = portalLocation(results);
+      // Services only while online: offline, every fetch would fail, and each
+      // failure would count toward calling a healthy vendor "unknown".
+      if (this.connectivity.status === 'online') await this.pollServices();
       this.lastChecked = new Date();
       this.shownError = null;
       this.render();
@@ -162,14 +208,74 @@ class PanelController {
         : 'Service status is on hold until the connection is back.';
 
     this.empty.hidden = this.services.length > 0;
+    this.serviceList.hidden = this.services.length === 0;
+    this.serviceList.replaceChildren(...this.services.map((service) => this.serviceRow(service)));
     void this.pushTrayLine();
   }
 
-  /** Everything wrong right now, as alerts. Services join this list in phase 1. */
+  /** One service. Its subtitle can come off the network: `textContent` only. */
+  private serviceRow(service: ServiceConfig): HTMLLIElement {
+    const state = this.stateOf(service);
+    const connection = this.connectivity.status;
+    const online = connection === 'online';
+    const level = displayLevel(state);
+    // On hold means the connection is known to be the problem. While it is
+    // still being checked at launch, the service is simply checking too.
+    const held = connection === 'offline' || connection === 'portal';
+    const shown = held ? 'hold' : (level ?? 'checking');
+
+    const item = document.createElement('li');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'row service-row';
+    button.dataset.service = service.id;
+    button.dataset.state = shown;
+    button.title = `Open ${service.pageUrl}`;
+    button.addEventListener('click', () => {
+      void this.open(service.pageUrl);
+    });
+
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.setAttribute('aria-hidden', 'true');
+
+    const text = document.createElement('span');
+    text.className = 'row-text';
+    const name = document.createElement('span');
+    name.className = 'row-name';
+    name.textContent = service.name;
+    text.append(name);
+    const subtitle = serviceSubtitle(state, online);
+    if (subtitle !== null) {
+      const small = document.createElement('span');
+      small.className = 'row-subtitle';
+      small.textContent = subtitle;
+      text.append(small);
+    }
+
+    const label = document.createElement('span');
+    label.className = 'row-level';
+    label.textContent =
+      shown === 'hold' ? 'on hold' : shown === 'checking' ? 'checking…' : LEVEL_LABELS[shown];
+
+    button.append(dot, text, label);
+    item.append(button);
+    return item;
+  }
+
+  /**
+   * Everything wrong right now, as alerts. While the connection is down, its
+   * alert is the only one: every service would otherwise read as broken for
+   * a reason that has nothing to do with the vendor.
+   */
   private activeAlerts(): Alert[] {
     const probe = PROBES[0]?.url ?? '';
     const internet = connectivityAlert(this.connectivity.status, this.portalUrl, probe);
-    return internet === null ? [] : [internet];
+    if (internet !== null) return [internet];
+    if (this.connectivity.status !== 'online') return [];
+    return this.services
+      .map((service) => serviceAlert(service, this.stateOf(service)))
+      .filter((alert): alert is Alert => alert !== null);
   }
 
   /** Bring the popup in line with what is wrong now: raise it, update it, or close it. */
@@ -296,7 +402,11 @@ class PanelController {
   }
 
   private async pushTrayLine(): Promise<void> {
-    const line = formatTrayStatus(this.services, this.connectivity.status);
+    const entries: TrayEntry[] = this.services.map((service) => ({
+      name: service.name,
+      level: displayLevel(this.stateOf(service)),
+    }));
+    const line = formatTrayStatus(entries, this.connectivity.status);
     if (line === this.trayLine) return;
     this.trayLine = line;
     try {

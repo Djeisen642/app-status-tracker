@@ -11,14 +11,36 @@ and borrows its stack, its tooling and its guardrails wholesale.
 
 ## Status
 
-**Phase 0: the scaffold.** The app builds, starts, puts an icon in the tray and
-opens a panel. The one thing it checks so far is your own internet connection;
-no status pages are fetched yet. The plan, and what each phase delivers, is in
+**Phase 1, in progress.** The app checks your internet connection and watches
+**GitHub's** status page, and pops up when either goes bad. Cursor joins once
+its status API has been captured; adding your own services waits for the
+settings panel (phase 3). The plan, and what each phase delivers, is in
 [`docs/future-work.md`](docs/future-work.md).
 
-| The panel, connected                           | The panel, offline                                  |
-| ---------------------------------------------- | --------------------------------------------------- |
-| ![Connected](docs/screenshots/empty-light.png) | ![No connection](docs/screenshots/offline-dark.png) |
+| All clear                                      | During an outage                                         |
+| ---------------------------------------------- | -------------------------------------------------------- |
+| ![All clear](docs/screenshots/panel-light.png) | ![GitHub outage](docs/screenshots/panel-outage-dark.png) |
+
+## Watching a status page
+
+GitHub is watched through its Statuspage API (`/api/v2/summary.json`), the same
+API a long tail of vendors serve, fetched once a minute while you're online:
+
+- **The panel** lists each service with its level; a service in trouble shows
+  the incident, or which components are affected, under its name. Click a row
+  to open that status page.
+- **A bad state pops up** (see below), with a **View status page** link.
+  Degraded performance, a partial outage and a major outage pop up; scheduled
+  maintenance doesn't.
+- **A status page that can't be read is "unknown", never green.** One failed
+  fetch keeps the last reading; the second turns the service grey. It doesn't
+  pop up: that's the app being blind, not the vendor being down.
+- **While you're offline, services are "on hold"**, and only the connection
+  pops up. Blaming GitHub for your Wi-Fi is what this whole app exists to avoid.
+
+Every component on the page counts for now. Picking which ones you care about
+(GitHub's page includes Codespaces, Copilot and Pages) comes with the settings
+panel.
 
 ## The internet connection check
 
@@ -62,8 +84,7 @@ largest screen:
 - **Click it to open the full panel.** It doesn't appear at all while the
   panel is already open.
 
-The internet connection is the only check that can raise it so far. Services
-join it in phase 1.
+![A GitHub outage](docs/screenshots/popup-github-light.png)
 
 ## Tray menu
 
@@ -71,7 +92,9 @@ Left-click the icon to toggle the panel (or to grow a showing popup into it).
 Right-click for the menu:
 
 - a status line: "Offline: no internet connection" or "Offline: Wi-Fi sign-in
-  required" when the connection is the problem, otherwise "No services yet"
+  required" when the connection is the problem, otherwise "GitHub
+  operational" or the services in trouble, worst first (e.g. "GitHub: major
+  outage")
 - **Show status**, which opens the panel (the only way in on Linux, where most
   panels never deliver the icon's own click)
 - **Quit**

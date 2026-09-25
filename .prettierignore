@@ -9,3 +9,6 @@ yarn.lock
 e2e/.results/
 playwright-report/
 docs/screenshots/
+
+# Captured status-page responses: byte-for-byte as served, never reformatted.
+fixtures/

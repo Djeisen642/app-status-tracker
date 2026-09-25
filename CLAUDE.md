@@ -76,6 +76,9 @@ src/
     status.ts(.test)    # Level: the normalized status model, worstLevel
     connectivity.ts(.test)  # The internet check: probes, verdicts, offline hysteresis
     alerts.ts(.test)    # The popup: which bad states show, and when they show again
+    services.ts(.test)  # Watched services: config, due/backoff, level, alert
+    adapters/
+      statuspage.ts(.test)  # /api/v2/summary.json into a Snapshot
     time.ts             # Millisecond constants
     tray.ts(.test)      # The tray's status line
     errors.ts(.test)    # describeError() for native dialogs
@@ -83,15 +86,19 @@ src/
 src-tauri/
   src/lib.rs            # Tray, the window's two modes (panel/popup), open_url
   src/probe.rs          # http_probe: one plain-HTTP GET, reported as it came back
+  src/fetch.rs          # fetch_status: a status API GET, with ETag, native TLS, size cap
   src/main.rs           # Binary entry point
   tauri.conf.json       # Opaque, frameless, alwaysOnTop, skipTaskbar, hidden-until-clicked
   capabilities/         # Least-privilege permission set
 e2e/
-  harness.ts            # startApp(), setNetwork(), advanceToNextCheck()
+  harness.ts            # startApp(), setNetwork(), setGitHub(), advanceToNextCheck()
   panel.spec.ts         # The panel, driven in a real browser
   connectivity.spec.ts  # The connection check, with the network routed by Playwright
   popup.spec.ts         # The popup: raise, auto-close, dismiss, click through
+  services.spec.ts      # GitHub from the real capture: rows, outage popup, link, unknown
   capture.spec.ts       # Screenshots into docs/screenshots/, light and dark
+fixtures/
+  statuspage/           # Real status-page responses, byte-for-byte (never reformatted)
 scripts/
   version.ts(.test)     # The version, derived from the commit subjects
   commit-msg.ts         # The hook that holds a subject to that grammar
@@ -125,9 +132,12 @@ docs/
     dropped round is a Wi-Fi roam, and a status that flickers on those gets
     ignored. `navigator.onLine === false` skips the wait, because that reading
     (no interface up at all) is the one it gets right; `true` proves nothing.
-    The probe client has **no TLS backend** (`reqwest` with default features
-    off). Phase 1 needs one for status pages and chooses it then; the default,
-    aws-lc-rs, is a C build nobody has tried on Windows here yet.
+- **TLS is the OS's own (`native-tls`), not rustls.** SChannel on Windows,
+  Security.framework on macOS, OpenSSL on Linux. Two reasons: the OS
+  certificate store is what makes a corporate proxy that re-signs TLS with its
+  own root CA work (rustls with bundled roots rejects it), and SChannel needs
+  no C toolchain, where reqwest's default (aws-lc-rs) does. The probes share
+  the crate but refuse https on purpose.
 - **`unknown` is the worst level, never a quiet green.** A failed fetch means
   the app is blind. `LEVELS` orders `unknown` above `major` on purpose, and
   nothing may map a failure to `operational`. A status tracker that shows green
@@ -136,10 +146,26 @@ docs/
   schedules its next run when the current one finishes, so after the machine
   sleeps one pending timeout fires on wake instead of a backlog. It also reruns
   at once on the window's `online`/`offline` events.
-- **Polling will be slot-like, not a timer per service.** A 30s tick asks which
-  services are _due_ (task-tracker's slot lesson): after the lid has been shut
-  for three hours, each service is fetched once, not in a burst of queued
-  timers. Never replace it with `setInterval` per service.
+- **Services ride the connection check's rounds; each has a `nextAt`, not a
+  timer.** One chain of timeouts drives the app: each round checks the
+  connection, then fetches whichever services are due (`isDue`). After the lid
+  has been shut for three hours, each service is fetched once, not in a burst
+  of queued timers (task-tracker's slot lesson). Never give a service its own
+  `setInterval`. Services are skipped entirely while offline: every fetch
+  would fail, and each failure would count toward calling a healthy vendor
+  "unknown".
+- **A service's failures are counted like the connection's.** One failed
+  fetch keeps the last reading; the second makes it `unknown`. A failing page
+  backs off, doubling from 60s to 15 minutes. `unknown` never pops up: that is
+  the app being blind, not the vendor being down.
+- **Fixtures are real, and anything that isn't says so.** `fixtures/` holds
+  status-page responses byte-for-byte as served (it is in `.prettierignore`
+  for that reason). Tests that need a bad state derive it from a real capture
+  with documented values swapped in, and are labelled SYNTHETIC; they prove
+  the app reacts to a value, not that the vendor sends it. The Statuspage
+  adapter's non-operational tables are documented vocabulary that no capture
+  has confirmed yet, and an unrecognized value maps to `unknown`. When a vendor
+  has an incident, capture it: that is the fixture this repo most lacks.
 - **A bad state pops up once, as a small card with a link.** When a check goes
   bad, the one window shrinks to a popup in the top-right corner, with a link
   to the page that explains it (the status page; for a captive portal, the

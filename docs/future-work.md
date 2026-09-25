@@ -25,23 +25,23 @@ Status keys: **done** · **partial** · **todo**
 
 ### Phase 1: one adapter, end to end
 
-| Status | Item                                                                                                                                                                                                                                                                                                       |
-| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| todo   | `fetch_status(url, etag)` in Rust: reqwest with rustls, http(s) only, redirects followed, 10s timeout, ~2 MB body cap. The webview never fetches: the CSP is `connect-src 'self' ipc:` and most status APIs send no CORS headers, and a scoped `tauri-plugin-http` fails silently when the scope is wrong. |
-| todo   | Statuspage adapter over `/api/v2/summary.json`: pure TypeScript, normalizing into `Level`, tested against fixtures captured from real pages (all-green **and** mid-incident).                                                                                                                              |
-| todo   | Poller on a 30s tick that asks which services are _due_, like task-tracker's slots, never a `setInterval` per service. 60s floor, jitter, ETag, exponential backoff to 15 min on failure.                                                                                                                  |
-| todo   | Service rows in the panel (dot, name, level, current incident, link to the source page).                                                                                                                                                                                                                   |
-| todo   | The tray icon recolors its dot to the worst level, including grey for offline. Icons swap only when the aggregate changes.                                                                                                                                                                                 |
-| todo   | Services configured in `settings.json` by hand, until phase 3.                                                                                                                                                                                                                                             |
+| Status  | Item                                                                                                                                                                                                                                                                                                 |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| done    | `fetch_status(url, etag)` in Rust: native TLS (see CLAUDE.md for why not rustls), system proxy, http(s) only, up to 5 redirects followed, 10s timeout, 2 MB cap. Tested against local sockets; a real HTTPS fetch through the sandbox proxy is an opt-in test (`cargo test -- --ignored`).           |
+| partial | Statuspage adapter over `/api/v2/summary.json`, tested against a **real all-green GitHub capture**. The non-operational mapping is Statuspage's documented vocabulary, exercised by labelled synthetic variants; **no capture taken during an incident yet**. Unrecognized values read as `unknown`. |
+| done    | Polling rides the connection check's rounds: each service has a `nextAt`, 60s interval, ETag/304, doubling backoff to 15 min. Skipped while offline.                                                                                                                                                 |
+| todo    | Jitter between services. Irrelevant with one; worth it before there are ten.                                                                                                                                                                                                                         |
+| done    | Service rows in the panel (dot, name, level, incident or affected components); a row opens its status page.                                                                                                                                                                                          |
+| done    | Services raise the popup (degraded, partial, major) with **View status page**; on hold and silent while offline.                                                                                                                                                                                     |
+| partial | Services are built in (`DEFAULT_SERVICES`: GitHub). Cursor waits for a real capture of `status.cursor.com`; your own list waits for phase 3's settings panel.                                                                                                                                        |
+| todo    | The tray icon recolors its dot to the worst level, including grey for offline. Icons swap only when the aggregate changes.                                                                                                                                                                           |
 
 ### Phase 2: tell me when it changes
 
-| Status | Item                                                                                                                                                                 |
-| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| todo   | Each service produces an `Alert` (`alerts.ts`), keyed on `(service, level, incidentId)`, linking to its status page, so the popup covers services too.               |
-| todo   | Popup state persisted to `state.json` (atomic write), so a relaunch mid-incident doesn't pop again for the incident you already dismissed.                           |
-| todo   | While the connection check says offline or portal, services show as on hold rather than unknown, and raise no alerts of their own; the connection's alert covers it. |
-| todo   | Settle the history log format (see below) so nothing is lost before it's built.                                                                                      |
+| Status | Item                                                                                                                                       |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| todo   | Popup state persisted to `state.json` (atomic write), so a relaunch mid-incident doesn't pop again for the incident you already dismissed. |
+| todo   | Settle the history log format (see below) so nothing is lost before it's built.                                                            |
 
 ### Phase 3: settings
 
@@ -73,6 +73,11 @@ Status keys: **done** · **partial** · **todo**
 | todo   | Hide the panel when it loses focus. Deliberately not in phase 0: clicking the tray icon blurs the panel first, so a naive hide-on-blur makes the click that should close it reopen it instead. Needs a debounce and a real desktop to test on. |
 
 ## Open questions
+
+- **What does a Statuspage incident actually look like on the wire?** Every
+  capture so far is all-green. The next time GitHub (or any Statuspage vendor)
+  has an incident, save `/api/v2/summary.json` into `fixtures/statuspage/` and
+  replace the synthetic variants in the adapter tests with it.
 
 - **Should the probe endpoints be configurable?** Google and Microsoft see a
   request from your IP every 30 seconds while online (Windows already sends

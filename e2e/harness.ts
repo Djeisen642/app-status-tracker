@@ -7,9 +7,12 @@
  * No test-only hooks leak into the app itself. Keep it that way.
  */
 
+import { readFileSync } from 'node:fs';
+
 import { expect, type Page } from '@playwright/test';
 
 import { PROBES } from '../src/lib/connectivity.ts';
+import { apiUrl, DEFAULT_SERVICES } from '../src/lib/services.ts';
 
 /** A fixed Monday, 10:30 local. */
 export const MONDAY_1030 = new Date(2026, 7, 3, 10, 30);
@@ -17,17 +20,57 @@ export const MONDAY_1030 = new Date(2026, 7, 3, 10, 30);
 /** How the probe endpoints behave: `up` answers them, `down` drops them. */
 export type Network = 'up' | 'down';
 
+/**
+ * What GitHub's status API answers.
+ *
+ * `operational` is the real capture in `fixtures/`, served as-is. `outage` is
+ * SYNTHETIC: that capture with Actions set to `major_outage`, Statuspage's
+ * documented value, for driving the UI through a bad state. It proves the app
+ * reacts to the value, not that GitHub's API sends it that way. `down` fails
+ * the request outright.
+ */
+export type GitHubState = 'operational' | 'outage' | 'down';
+
+const GITHUB_OPERATIONAL = readFileSync(
+  new URL('../fixtures/statuspage/github-2026-09-25-operational.json', import.meta.url),
+  'utf8',
+);
+
+function githubBody(state: 'operational' | 'outage'): string {
+  if (state === 'operational') return GITHUB_OPERATIONAL;
+  const summary = JSON.parse(GITHUB_OPERATIONAL) as {
+    components: { name: string; status: string }[];
+  };
+  for (const component of summary.components) {
+    if (component.name === 'Actions') component.status = 'major_outage';
+  }
+  return JSON.stringify(summary);
+}
+
+const GITHUB = DEFAULT_SERVICES.find((service) => service.id === 'github');
+if (GITHUB === undefined) throw new Error('GitHub is no longer a default service');
+export const GITHUB_PAGE = GITHUB.pageUrl;
+
 export interface SeedOptions {
   /** Simulated wall-clock time. */
   now?: Date;
   /** The probe endpoints' behavior at launch. Defaults to `up`. */
   network?: Network;
+  /** GitHub's status API at launch. Defaults to `operational`. */
+  github?: GitHubState;
 }
 
 /** Freeze the clock, start from empty storage, and load the app. */
 export async function startApp(page: Page, options: SeedOptions = {}): Promise<void> {
   await page.clock.install({ time: options.now ?? MONDAY_1030 });
   await setNetwork(page, options.network ?? 'up');
+  await setGitHub(page, options.github ?? 'operational');
+  // The status page itself, for when a link to it is followed.
+  await page
+    .context()
+    .route(`${GITHUB_PAGE}/`, (route) =>
+      route.fulfill({ contentType: 'text/html', body: '<title>GitHub Status</title>' }),
+    );
   await page.addInitScript(() => {
     localStorage.clear();
   });
@@ -52,6 +95,23 @@ export async function setNetwork(page: Page, network: Network): Promise<void> {
         : route.abort('internetdisconnected'),
     );
   }
+}
+
+/** Answer GitHub's status API with `state` from now on. Never the real network. */
+export async function setGitHub(page: Page, state: GitHubState): Promise<void> {
+  if (GITHUB === undefined) return;
+  const url = apiUrl(GITHUB);
+  await page.unroute(url);
+  await page.route(url, (route) =>
+    state === 'down'
+      ? route.abort('connectionrefused')
+      : route.fulfill({
+          contentType: 'application/json',
+          // The page is served from localhost; this is a cross-origin read.
+          headers: { 'Access-Control-Allow-Origin': '*' },
+          body: githubBody(state),
+        }),
+  );
 }
 
 /**

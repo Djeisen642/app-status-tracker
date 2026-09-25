@@ -20,13 +20,35 @@ const SHOTS = 'docs/screenshots';
 test.use({ viewport: { width: 360, height: 440 } });
 
 for (const colorScheme of ['light', 'dark'] as const) {
-  test(`capture: the empty panel (${colorScheme})`, async ({ page }) => {
+  test(`capture: the panel (${colorScheme})`, async ({ page }) => {
     await page.emulateMedia({ colorScheme, reducedMotion: 'reduce' });
     await startApp(page);
 
-    await expect(page.getByText('No services yet')).toBeVisible();
     await expect(page.locator('#internet')).toHaveAttribute('data-state', 'online');
-    await page.screenshot({ path: `${SHOTS}/empty-${colorScheme}.png` });
+    await expect(page.locator('[data-service="github"]')).toHaveAttribute(
+      'data-state',
+      'operational',
+    );
+    await page.screenshot({ path: `${SHOTS}/panel-${colorScheme}.png` });
+  });
+
+  test(`capture: the GitHub outage popup (${colorScheme})`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme, reducedMotion: 'reduce' });
+    // SYNTHETIC outage: see `setGitHub` in the harness.
+    await startApp(page, { github: 'outage' });
+
+    const popup = page.locator('#popup');
+    await expect(popup).toContainText('GitHub: major outage');
+    await popup.screenshot({ path: `${SHOTS}/popup-github-${colorScheme}.png` });
+  });
+
+  test(`capture: the panel during an outage (${colorScheme})`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme, reducedMotion: 'reduce' });
+    await startApp(page, { github: 'outage' });
+    await page.locator('#popup').getByText('GitHub: major outage').click();
+
+    await expect(page.locator('[data-service="github"]')).toHaveAttribute('data-state', 'major');
+    await page.screenshot({ path: `${SHOTS}/panel-outage-${colorScheme}.png` });
   });
 
   test(`capture: the offline popup (${colorScheme})`, async ({ page }) => {

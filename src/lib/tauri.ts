@@ -9,6 +9,7 @@
  */
 
 import type { ProbeOutcome } from './connectivity.ts';
+import type { FetchOutcome } from './services.ts';
 
 /** `true` only when running inside the Tauri webview. */
 export function isTauri(): boolean {
@@ -93,6 +94,39 @@ export async function openUrl(url: string): Promise<void> {
 
   const protocol = new URL(url).protocol;
   if (protocol === 'http:' || protocol === 'https:') window.open(url, '_blank', 'noopener');
+}
+
+/**
+ * GET a status page's API once, sending `etag` as `If-None-Match`.
+ *
+ * On the desktop, Rust makes the request (`fetch.rs`), with the OS's TLS and
+ * proxy settings. The browser build fetches directly, which works for the
+ * e2e suite (Playwright answers the request) and for status pages that allow
+ * cross-origin reads. A bridge failure comes back as an `error` outcome rather
+ * than a rejection, so one bad service can't abort a whole round of checks.
+ */
+export async function fetchStatus(url: string, etag: string | null): Promise<FetchOutcome> {
+  try {
+    if (isTauri()) {
+      const { invoke } = await import('@tauri-apps/api/core');
+      return await invoke<FetchOutcome>('fetch_status', { url, etag });
+    }
+
+    const response = await fetch(url, {
+      cache: 'no-store',
+      headers: etag === null ? {} : { 'If-None-Match': etag },
+      signal: AbortSignal.timeout(10_000),
+    });
+    return {
+      kind: 'response',
+      status: response.status,
+      etag: response.headers.get('ETag'),
+      url: response.url,
+      body: await response.text(),
+    };
+  } catch (error) {
+    return { kind: 'error', message: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 /** Update the tray's status line. */

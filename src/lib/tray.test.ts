@@ -64,4 +64,17 @@ describe('formatTrayStatus', () => {
     expect(formatTrayStatus([], 'checking')).toBe('No services yet');
     expect(formatTrayStatus([], 'online')).toBe('No services yet');
   });
+
+  it('says it is checking until the first reading arrives', () => {
+    expect(formatTrayStatus([{ name: 'GitHub', level: null }])).toBe('Checking…');
+  });
+
+  it('reports what it knows while others are still checking', () => {
+    expect(
+      formatTrayStatus([
+        { name: 'GitHub', level: 'major' },
+        { name: 'Cursor', level: null },
+      ]),
+    ).toBe('GitHub: major outage');
+  });
 });

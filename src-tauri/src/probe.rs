@@ -96,8 +96,8 @@ async fn fetch(client: &reqwest::Client, url: reqwest::Url) -> ProbeOutcome {
 /// Only plain `http://` URLs are probed.
 ///
 /// Not a security boundary so much as a statement of purpose: the probe exists
-/// to see what the network does to an unencrypted request, and this client has
-/// no TLS backend to make any other kind.
+/// to see what the network does to an unencrypted request. Over https a captive
+/// portal is indistinguishable from a dead link.
 fn parse_probe_url(raw: &str) -> Result<reqwest::Url, String> {
     let url = reqwest::Url::parse(raw).map_err(|err| format!("Not a URL: {err}"))?;
     if url.scheme() != "http" {

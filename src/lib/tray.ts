@@ -11,7 +11,8 @@ import { LEVEL_LABELS, LEVELS, type Level } from './status.ts';
 
 export interface TrayEntry {
   readonly name: string;
-  readonly level: Level;
+  /** `null` while its first reading is still on the way. */
+  readonly level: Level | null;
 }
 
 /** How many problem services the line names before summarizing the rest. */
@@ -36,12 +37,14 @@ export function formatTrayStatus(
   const offline = connectivityTrayLine(connectivity);
   if (offline !== null) return offline;
   if (entries.length === 0) return 'No services yet';
+  if (entries.every((entry) => entry.level === null)) return 'Checking…';
 
   const problems = entries
-    .map((entry, index) => ({ entry, index }))
-    .filter(({ entry }) => entry.level !== 'operational')
-    .sort((a, b) => severity(b.entry.level) - severity(a.entry.level) || a.index - b.index)
-    .map(({ entry }) => entry);
+    .map((entry, index) => ({ entry, level: entry.level, index }))
+    .filter((item): item is typeof item & { level: Level } => item.level !== null)
+    .filter(({ level }) => level !== 'operational')
+    .sort((a, b) => severity(b.level) - severity(a.level) || a.index - b.index)
+    .map(({ entry, level }) => ({ name: entry.name, level }));
 
   if (problems.length === 0) {
     return entries.length === 1
