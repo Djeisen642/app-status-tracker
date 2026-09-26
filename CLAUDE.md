@@ -83,6 +83,7 @@ src/
       statuspage.ts(.test)  # /api/v2/summary.json into a Snapshot
     time.ts             # Millisecond constants
     tray.ts(.test)      # The tray's status line
+    summary.ts(.test)   # The panel's headline: the worst thing, in one sentence
     errors.ts(.test)    # describeError() for native dialogs
     tauri.ts            # Optional native bridge; degrades gracefully in a browser
 src-tauri/
@@ -272,7 +273,20 @@ docs/
   fires while the window is hidden. Route user-facing errors through
   `showError()`.
 - **Motion is GPU-only.** Animate `transform`/`opacity` exclusively, and respect
-  `prefers-reduced-motion`.
+  `prefers-reduced-motion`. The orb's pulse ring is the one looping animation,
+  and it runs only while something is wrong.
+- **The design answers "is anything down?" before a row is read.** The hero
+  (`summary.ts`) names the worst thing in one sentence, on an orb and a tint in
+  the overall state's colour. Healthy is the quiet case on purpose: a healthy
+  tile's pill is neutral (its dot still says green), and only a problem gets
+  colour, an accent edge and a pulse. Resist making the calm state colourful;
+  a wall of green hides the one red. Colour is always paired with words.
+  State colour is set once per element as `--tone` from `data-state` /
+  `data-tone`, and every part (dot, pill, edge, glow) reads it; add a state by
+  adding it to those selectors, not by colouring parts one by one.
+- **Nothing decorative goes in an accessible name.** The popup link's arrow is
+  an `aria-hidden` span, not a CSS `::after`: generated content is part of the
+  computed name, so a screen reader would read "right arrow".
 - **The version is derived from the commit subjects and lives in four files.**
   `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and the
   crate's entry in `src-tauri/Cargo.lock`. `scripts/version.ts` is the single

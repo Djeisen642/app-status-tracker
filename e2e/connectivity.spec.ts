@@ -19,7 +19,7 @@ test('reports connected when the probes answer', async ({ page }) => {
 
   await expect(internetRow(page)).toHaveAttribute('data-state', 'online');
   await expect(internetRow(page)).toContainText('connected');
-  await expect(page.locator('#offline-note')).toBeHidden();
+  await expect(page.locator('#hero')).toHaveAttribute('data-tone', 'good');
 });
 
 test('says offline at once when the OS reports no network', async ({ page, context }) => {
@@ -29,12 +29,12 @@ test('says offline at once when the OS reports no network', async ({ page, conte
   await context.setOffline(true);
 
   await expect(internetRow(page)).toHaveAttribute('data-state', 'offline');
-  await expect(page.locator('#offline-note')).toContainText('on hold');
+  await expect(page.locator('#hero-title')).toHaveText('You’re offline');
 
   await context.setOffline(false);
 
   await expect(internetRow(page)).toHaveAttribute('data-state', 'online');
-  await expect(page.locator('#offline-note')).toBeHidden();
+  await expect(page.locator('#hero-title')).toHaveText('All systems normal');
 });
 
 test('waits for a second failed round before saying offline', async ({ page }) => {

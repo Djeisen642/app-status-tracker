@@ -22,7 +22,7 @@ function message(page: Page) {
 
 async function add(page: Page, address: string): Promise<void> {
   if (await page.locator('#add-form').isHidden()) {
-    await page.getByRole('button', { name: '+ Add a status page' }).click();
+    await page.getByRole('button', { name: 'Add a status page' }).click();
   }
   await page.getByLabel('Status page address').fill(address);
   await page.getByRole('button', { name: 'Add', exact: true }).click();
@@ -160,11 +160,11 @@ test('a service removed while its fetch is out stays removed', async ({ page }) 
 
 test('Esc backs out of the add form without closing anything else', async ({ page }) => {
   await startApp(page);
-  await page.getByRole('button', { name: '+ Add a status page' }).click();
+  await page.getByRole('button', { name: 'Add a status page' }).click();
   await expect(page.getByLabel('Status page address')).toBeFocused();
 
   await page.keyboard.press('Escape');
 
   await expect(page.locator('#add-form')).toBeHidden();
-  await expect(page.getByRole('button', { name: '+ Add a status page' })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Add a status page' })).toBeFocused();
 });

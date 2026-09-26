@@ -17,6 +17,9 @@ test('starts cleanly, with the connection first and the services under it', asyn
 
   await expect(page.getByRole('heading', { name: 'Service status' })).toBeVisible();
   await expect(page.locator('#internet')).toBeVisible();
+  await expect(page.locator('#hero-title')).toHaveText('All systems normal');
+  await expect(page.locator('#hero-detail')).toHaveText('2 services watched');
+  await expect(page.locator('#checked')).toHaveText(/^Checked /);
   await expect(page.getByRole('list', { name: 'Services' })).toContainText('GitHub');
   expect(errors).toEqual([]);
 });

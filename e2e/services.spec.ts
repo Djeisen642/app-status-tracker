@@ -62,6 +62,8 @@ test('the Cursor row shows the incident under its name', async ({ page }) => {
 
   const row = page.locator('[data-service="cursor"]');
   await expect(row).toHaveAttribute('data-state', 'degraded');
+  await expect(page.locator('#hero')).toHaveAttribute('data-tone', 'warn');
+  await expect(page.locator('#hero-title')).toHaveText('Cursor is degraded');
   await expect(row).toContainText('Investigating service degradation — Grok Bot');
 });
 

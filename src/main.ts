@@ -65,6 +65,7 @@ import {
   type ServiceState,
 } from './lib/services.ts';
 import { LEVEL_LABELS } from './lib/status.ts';
+import { headline } from './lib/summary.ts';
 import { formatTrayStatus, type TrayEntry } from './lib/tray.ts';
 
 function mustGet<T extends HTMLElement>(id: string): T {
@@ -78,7 +79,11 @@ class PanelController {
   private readonly close = mustGet<HTMLButtonElement>('close');
   private readonly internet = mustGet('internet');
   private readonly internetLevel = mustGet('internet-level');
-  private readonly offlineNote = mustGet('offline-note');
+  private readonly hero = mustGet('hero');
+  private readonly heroTitle = mustGet('hero-title');
+  private readonly heroDetail = mustGet('hero-detail');
+  private readonly checked = mustGet('checked');
+  private readonly servicesLabel = mustGet('services-label');
   private readonly popupList = mustGet<HTMLUListElement>('popup-list');
   private readonly serviceList = mustGet<HTMLUListElement>('service-list');
 
@@ -341,23 +346,32 @@ class PanelController {
     this.internet.dataset.state = status;
     this.internetLevel.textContent = CONNECTIVITY_LABELS[status];
     if (this.lastChecked !== null) {
-      const time = this.lastChecked.toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      });
-      this.internet.title = `Last checked ${time}`;
+      const time = (options: Intl.DateTimeFormatOptions) =>
+        this.lastChecked?.toLocaleTimeString([], options) ?? '';
+      // Seconds in the tooltip, minutes on screen: the harness waits on the
+      // former, and nobody needs to read seconds at a glance.
+      this.internet.title = `Last checked ${time({ hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+      this.checked.textContent = `Checked ${time({ hour: 'numeric', minute: '2-digit' })}`;
     }
-    this.offlineNote.hidden = status !== 'offline' && status !== 'portal';
-    this.offlineNote.textContent =
-      status === 'portal'
-        ? 'This network wants you to sign in before it lets anything through. Open a browser to get past it.'
-        : 'Service status is on hold until the connection is back.';
 
-    this.empty.hidden = this.services.length > 0;
-    this.serviceList.hidden = this.services.length === 0;
+    const summary = headline(status, this.trayEntries());
+    this.hero.dataset.tone = summary.tone;
+    this.heroTitle.textContent = summary.title;
+    this.heroDetail.textContent = summary.detail;
+
+    const none = this.services.length === 0;
+    this.empty.hidden = !none;
+    this.serviceList.hidden = none;
+    this.servicesLabel.hidden = none;
     this.serviceList.replaceChildren(...this.services.map((service) => this.serviceRow(service)));
     void this.pushTrayLine();
+  }
+
+  private trayEntries(): TrayEntry[] {
+    return this.services.map((service) => ({
+      name: service.name,
+      level: displayLevel(this.stateOf(service)),
+    }));
   }
 
   /** One service. Its subtitle can come off the network: `textContent` only. */
@@ -401,7 +415,7 @@ class PanelController {
     }
 
     const label = document.createElement('span');
-    label.className = 'row-level';
+    label.className = 'row-level pill';
     label.textContent =
       shown === 'hold' ? 'on hold' : shown === 'checking' ? 'checking…' : LEVEL_LABELS[shown];
 
@@ -517,6 +531,10 @@ class PanelController {
       link.type = 'button';
       link.className = 'alert-link';
       link.textContent = label;
+      const arrow = document.createElement('span');
+      arrow.setAttribute('aria-hidden', 'true');
+      arrow.textContent = '→';
+      link.append(arrow);
       link.addEventListener('click', (event) => {
         event.stopPropagation();
         void this.open(url);
@@ -561,11 +579,7 @@ class PanelController {
   }
 
   private async pushTrayLine(): Promise<void> {
-    const entries: TrayEntry[] = this.services.map((service) => ({
-      name: service.name,
-      level: displayLevel(this.stateOf(service)),
-    }));
-    const line = formatTrayStatus(entries, this.connectivity.status);
+    const line = formatTrayStatus(this.trayEntries(), this.connectivity.status);
     if (line === this.trayLine) return;
     this.trayLine = line;
     try {

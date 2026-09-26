@@ -88,7 +88,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await page.route('https://example.com/api/v2/summary.json', (route) =>
       route.fulfill({ status: 404, headers: { 'Access-Control-Allow-Origin': '*' }, body: '' }),
     );
-    await page.getByRole('button', { name: '+ Add a status page' }).click();
+    await page.getByRole('button', { name: 'Add a status page' }).click();
     await page.getByLabel('Status page address').fill('example.com');
     await page.getByRole('button', { name: 'Add', exact: true }).click();
 
