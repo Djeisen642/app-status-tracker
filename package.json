@@ -1,7 +1,7 @@
 {
   "name": "app-status-tracker",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "Lightweight system-tray utility that watches the status pages of the services you depend on and tells you when one of them changes.",
   "license": "MIT",
