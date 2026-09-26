@@ -356,6 +356,23 @@ is split by what changes together, and should stay that way:
 - **Nothing decorative goes in an accessible name.** The popup link's arrow is
   an `aria-hidden` span, not a CSS `::after`: generated content is part of the
   computed name, so a screen reader would read "right arrow".
+- **Every icon is a drawn SVG, never a bare Unicode character.** A raw `×` or
+  `⚙` is rendered by whatever font the OS falls back to for that codepoint,
+  which differs by platform and can come out as a fuzzy bitmap emoji instead
+  of a vector glyph — the app shipped with exactly that bug (phase-1 review
+  caught it). `ui/icons.ts` holds the ones built dynamically (the popup's
+  dismiss, a row's remove); the static ones (gear, panel close, add) are
+  inline `<svg>` in `index.html`, kept in sync by eye since there are only a
+  few. `stroke="currentColor"` so hover/focus recolour them for free.
+- **The service list is one grouped card, not a stack of separately bordered
+  tiles.** Individually bordered, shadowed, rounded rows are the exact "card
+  soup" every SaaS dashboard uses; a single surface with a hairline
+  `border-bottom` between rows (no radius, no shadow, no border on the row
+  itself) is the native pattern instead (macOS System Settings, Mail, Files).
+  A row in trouble still gets the coloured left edge and a faint tint, just
+  without its own border. Don't revert to per-row cards for "consistency"
+  with the hero; the hero is a headline and is supposed to look different
+  from the list below it.
 - **The version is derived from the commit subjects and lives in four files.**
   `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and the
   crate's entry in `src-tauri/Cargo.lock`. `scripts/version.ts` is the single

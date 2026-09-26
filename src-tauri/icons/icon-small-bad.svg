@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"
+  role="img" aria-label="App Status Tracker (outage)">
+  <title>App Status Tracker — outage</title>
+  <desc>icon-small.svg with the dot recolored red: a watched service has a partial or major outage, or the connection is down.</desc>
+
+  <!--
+    A tray-state variant of icon-small.svg, not a new design: same tile and
+    ring, only the dot's fill changes. Keep in sync with icon-small.svg (see
+    icons/README.md) — regenerate with icons/README.md's tray section rather
+    than hand-editing the PNG.
+  -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2b3555" />
+      <stop offset="1" stop-color="#12141b" />
+    </linearGradient>
+
+    <linearGradient id="ring" x1="96" y1="96" x2="416" y2="416" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#93b3ff" />
+      <stop offset="1" stop-color="#4f7cf0" />
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="114" fill="url(#tile)" />
+
+  <circle cx="256" cy="256" r="160" fill="none" stroke="url(#ring)" stroke-width="64" />
+
+  <circle cx="256" cy="256" r="84" fill="#ff453a" />
+</svg>

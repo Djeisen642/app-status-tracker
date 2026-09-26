@@ -28,76 +28,185 @@
     </section>
 
     <main id="panel" class="panel" aria-labelledby="app-title">
-      <header class="appbar">
-        <img class="brand" src="./src-tauri/icons/icon-small.svg" alt="" aria-hidden="true" />
-        <h1 id="app-title" class="app-title">Service status</h1>
-        <button id="close" class="icon-button" type="button" aria-label="Close" title="Close (Esc)">
-          ×
-        </button>
-      </header>
-
       <!--
-        The answer at a glance: the worst thing, in one sentence, on an orb and
-        a tint that take the overall state's colour. Everything below is detail.
+        Everything the Settings sheet covers, so it can be made `inert` while
+        the sheet is open: without that, Tab still reaches the close button,
+        the add form and every row underneath it, all invisible. See
+        src/ui/settings.ts.
       -->
-      <section id="hero" class="hero" data-tone="idle" aria-live="polite">
-        <span class="orb" aria-hidden="true"></span>
-        <div class="hero-text">
-          <p id="hero-title" class="hero-title">Checking…</p>
-          <p id="hero-detail" class="hero-detail"></p>
-        </div>
-      </section>
+      <div id="panel-content" class="panel-content">
+        <header class="appbar">
+          <img class="brand" src="./src-tauri/icons/icon-small.svg" alt="" aria-hidden="true" />
+          <h1 id="app-title" class="app-title">Service status</h1>
+          <button
+            id="settings-open"
+            class="icon-button"
+            type="button"
+            aria-label="Settings"
+            title="Settings"
+          >
+            <svg
+              class="icon-glyph"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.75"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <circle cx="12" cy="12" r="3" />
+              <path
+                d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+              />
+            </svg>
+          </button>
+          <button
+            id="close"
+            class="icon-button"
+            type="button"
+            aria-label="Close"
+            title="Close (Esc)"
+          >
+            <svg
+              class="icon-glyph"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </header>
 
-      <!-- Always first: every other status depends on it. -->
-      <div class="meta">
-        <div id="internet" class="chip" data-state="checking">
-          <span class="dot" aria-hidden="true"></span>
-          <span class="chip-name">Internet</span>
-          <span id="internet-level" class="chip-level">checking…</span>
+        <!--
+          The answer at a glance: the worst thing, in one sentence, on an orb
+          and a tint that take the overall state's colour. Everything below is
+          detail.
+        -->
+        <section id="hero" class="hero" data-tone="idle" aria-live="polite">
+          <span class="orb" aria-hidden="true"></span>
+          <div class="hero-text">
+            <p id="hero-title" class="hero-title">Checking…</p>
+            <p id="hero-detail" class="hero-detail"></p>
+          </div>
+        </section>
+
+        <!-- Always first: every other status depends on it. -->
+        <div class="meta">
+          <div id="internet" class="chip" data-state="checking">
+            <span class="dot" aria-hidden="true"></span>
+            <span class="chip-name">Internet</span>
+            <span id="internet-level" class="chip-level">checking…</span>
+          </div>
+          <span id="checked" class="checked"></span>
         </div>
-        <span id="checked" class="checked"></span>
+
+        <p id="services-label" class="section-label">Services</p>
+        <ul id="service-list" class="service-list" aria-labelledby="services-label" hidden></ul>
+
+        <section id="empty" class="empty" hidden>
+          <p class="empty-body">
+            Paste a status page's address below. GitHub, Cursor and most SaaS vendors have one.
+          </p>
+        </section>
+
+        <footer class="panel-foot">
+          <!--
+            Shown when settings.json couldn't be read or understood: the
+            defaults are running in memory, and nothing is saved over the real
+            file.
+          -->
+          <p id="settings-problem" class="settings-problem" role="status" hidden>
+            Your saved status pages couldn’t be read, so this is the default list and changes won’t
+            be saved. Fix or remove settings.json, then restart.
+          </p>
+          <button id="add-open" class="add-open" type="button">
+            <svg
+              class="icon-glyph"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            Add a status page
+          </button>
+          <form id="add-form" class="add-form" hidden novalidate>
+            <label for="add-url" class="add-label">Status page address</label>
+            <div class="add-row">
+              <input
+                id="add-url"
+                class="add-input"
+                type="text"
+                inputmode="url"
+                autocomplete="off"
+                autocapitalize="off"
+                spellcheck="false"
+                placeholder="status.example.com"
+              />
+              <button id="add-submit" class="add-submit" type="submit">Add</button>
+              <button id="add-cancel" class="icon-button" type="button" aria-label="Cancel">
+                <svg
+                  class="icon-glyph"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <path d="M6 6l12 12M18 6L6 18" />
+                </svg>
+              </button>
+            </div>
+            <p id="add-message" class="add-message" role="status" aria-live="polite"></p>
+          </form>
+        </footer>
       </div>
 
-      <p id="services-label" class="section-label">Services</p>
-      <ul id="service-list" class="service-list" aria-labelledby="services-label" hidden></ul>
-
-      <section id="empty" class="empty" hidden>
-        <p class="empty-body">
-          Paste a status page's address below. GitHub, Cursor and most SaaS vendors have one.
-        </p>
+      <!-- A sheet over the whole panel; see src/ui/settings.ts. -->
+      <section id="settings" class="settings-overlay" hidden aria-labelledby="settings-title">
+        <header class="settings-head">
+          <h2 id="settings-title" class="settings-title">Settings</h2>
+          <button
+            id="settings-close"
+            class="icon-button"
+            type="button"
+            aria-label="Close"
+            title="Close (Esc)"
+          >
+            <svg
+              class="icon-glyph"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </header>
+        <div class="settings-body">
+          <section class="settings-group">
+            <h3 class="settings-group-title">About</h3>
+            <p id="build-info" class="build-info"></p>
+          </section>
+        </div>
       </section>
-
-      <footer class="panel-foot">
-        <!--
-          Shown when settings.json couldn't be read or understood: the defaults
-          are running in memory, and nothing is saved over the real file.
-        -->
-        <p id="settings-problem" class="settings-problem" role="status" hidden>
-          Your saved status pages couldn’t be read, so this is the default list and changes won’t be
-          saved. Fix or remove settings.json, then restart.
-        </p>
-        <button id="add-open" class="add-open" type="button">
-          <span class="add-plus" aria-hidden="true">+</span> Add a status page
-        </button>
-        <form id="add-form" class="add-form" hidden novalidate>
-          <label for="add-url" class="add-label">Status page address</label>
-          <div class="add-row">
-            <input
-              id="add-url"
-              class="add-input"
-              type="text"
-              inputmode="url"
-              autocomplete="off"
-              autocapitalize="off"
-              spellcheck="false"
-              placeholder="status.example.com"
-            />
-            <button id="add-submit" class="add-submit" type="submit">Add</button>
-            <button id="add-cancel" class="icon-button" type="button" aria-label="Cancel">×</button>
-          </div>
-          <p id="add-message" class="add-message" role="status" aria-live="polite"></p>
-        </form>
-      </footer>
     </main>
 
     <script type="module" src="/src/main.ts"></script>

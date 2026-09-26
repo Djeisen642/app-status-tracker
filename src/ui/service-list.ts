@@ -9,6 +9,7 @@
  */
 
 import type { RowView } from '../lib/services.ts';
+import { closeIcon } from './icons.ts';
 
 export interface RowModel {
   readonly id: string;
@@ -91,7 +92,7 @@ export class ServiceList {
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'icon-button service-remove';
-    remove.textContent = '×';
+    remove.append(closeIcon());
     remove.addEventListener('click', () => {
       this.actions.remove(id);
     });

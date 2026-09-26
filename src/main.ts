@@ -15,6 +15,7 @@
  */
 
 import { connectivityAlert, type Alert } from './lib/alerts.ts';
+import { formatBuildInfo } from './lib/build-info.ts';
 import {
   combineVerdicts,
   CONNECTIVITY_LABELS,
@@ -38,13 +39,14 @@ import {
   type ServiceConfig,
   type ServiceState,
 } from './lib/services.ts';
-import { headline } from './lib/summary.ts';
+import { headline, type Tone } from './lib/summary.ts';
 import {
   fetchStatus,
   hidePanel,
   onShowPanel,
   openUrl,
   probeUrl,
+  setTrayIcon,
   setTrayStatus,
   showError,
 } from './lib/tauri.ts';
@@ -52,6 +54,7 @@ import { formatTrayStatus, type TrayEntry } from './lib/tray.ts';
 import { AddForm } from './ui/add-form.ts';
 import { Popup } from './ui/popup.ts';
 import { ServiceList } from './ui/service-list.ts';
+import { Settings } from './ui/settings.ts';
 import { WatchList } from './watchlist.ts';
 
 function mustGet<T extends HTMLElement>(id: string): T {
@@ -96,6 +99,20 @@ class App {
     },
     (input, say) => this.add(input, say),
   );
+  private readonly settings = new Settings(
+    {
+      open: mustGet('settings-open'),
+      overlay: mustGet('settings'),
+      close: mustGet('settings-close'),
+      buildInfo: mustGet('build-info'),
+      content: mustGet('panel-content'),
+    },
+    formatBuildInfo({
+      version: __APP_VERSION__,
+      commit: __BUILD_COMMIT__,
+      builtAt: __BUILD_DATE__,
+    }),
+  );
 
   private serviceStates = new Map<string, ServiceState>();
   private connectivity: ConnectivityState = INITIAL_CONNECTIVITY;
@@ -112,6 +129,10 @@ class App {
   private trayLine: string | null = null;
   /** The last tray failure shown, so a persistent one isn't a dialog every round. */
   private trayError: string | null = null;
+  /** The last tone the tray icon was recolored to, so an unchanged one isn't re-sent. */
+  private trayTone: Tone | null = null;
+  /** The last tray icon failure shown, so a persistent one isn't a dialog every round. */
+  private trayIconError: string | null = null;
 
   private get services(): readonly ServiceConfig[] {
     return this.watchlist.services;
@@ -123,8 +144,9 @@ class App {
     });
     document.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape') return;
-      // Esc backs out of the add form first, and only then closes the panel.
-      if (this.addForm.isOpen) this.addForm.close();
+      // Esc backs out of an open overlay first, and only then closes the panel.
+      if (this.settings.isOpen) this.settings.close();
+      else if (this.addForm.isOpen) this.addForm.close();
       else void hidePanel();
     });
 
@@ -312,6 +334,7 @@ class App {
       })),
     );
     void this.pushTrayLine();
+    void this.pushTrayIcon(summary.tone);
   }
 
   private trayEntries(): TrayEntry[] {
@@ -366,6 +389,25 @@ class App {
       if (detail === this.trayError) return;
       this.trayError = detail;
       await showError('Could not update the tray', detail);
+    }
+  }
+
+  /**
+   * Recolor the tray icon if the aggregate tone changed. Remembered only once
+   * the tray took it, for the same reason as `pushTrayLine`: caching it first
+   * would leave the icon stale after a failed call.
+   */
+  private async pushTrayIcon(tone: Tone): Promise<void> {
+    if (tone === this.trayTone) return;
+    try {
+      await setTrayIcon(tone);
+      this.trayTone = tone;
+      this.trayIconError = null;
+    } catch (error) {
+      const detail = describeError(error);
+      if (detail === this.trayIconError) return;
+      this.trayIconError = detail;
+      await showError('Could not update the tray icon', detail);
     }
   }
 }
