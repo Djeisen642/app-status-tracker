@@ -153,3 +153,25 @@ export async function showError(title: string, detail: string): Promise<void> {
   const { message } = await import('@tauri-apps/plugin-dialog');
   await message(detail, { title, kind: 'error' });
 }
+
+/** Where the browser build keeps `settings.json`, for `pnpm run dev` and e2e. */
+export const BROWSER_SETTINGS_KEY = 'app-status-tracker:settings';
+
+/** Read `settings.json` from the app config dir, or `null` on a first launch. */
+export async function loadSettingsJson(): Promise<string | null> {
+  if (!isTauri()) return localStorage.getItem(BROWSER_SETTINGS_KEY);
+
+  const { invoke } = await import('@tauri-apps/api/core');
+  return await invoke<string | null>('settings_load');
+}
+
+/** Write `settings.json` to the app config dir (atomically, on the desktop). */
+export async function saveSettingsJson(contents: string): Promise<void> {
+  if (!isTauri()) {
+    localStorage.setItem(BROWSER_SETTINGS_KEY, contents);
+    return;
+  }
+
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('settings_save', { contents });
+}

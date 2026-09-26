@@ -33,7 +33,12 @@ export const DEFAULT_SERVICES: readonly ServiceConfig[] = [
 
 /** The API behind the page. */
 export function apiUrl(service: ServiceConfig): string {
-  return `${service.pageUrl.replace(/\/+$/, '')}/api/v2/summary.json`;
+  return summaryUrl(service.pageUrl);
+}
+
+/** The Statuspage summary behind a status page's address. */
+export function summaryUrl(pageUrl: string): string {
+  return `${pageUrl.replace(/\/+$/, '')}/api/v2/summary.json`;
 }
 
 /** What one fetch saw, exactly as the bridge reports it. */

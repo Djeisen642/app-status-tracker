@@ -38,20 +38,29 @@ import {
   openUrl,
   presentPanel,
   fetchStatus,
+  loadSettingsJson,
   presentPopup,
+  saveSettingsJson,
   probeUrl,
   setTrayStatus,
   showError,
 } from './lib/tauri.ts';
 import {
+  describeFound,
+  findExisting,
+  judgeCandidate,
+  normalizeCandidate,
+} from './lib/candidate.ts';
+import { parseSettings, serializeSettings } from './lib/settings.ts';
+import {
   apiUrl,
   applyFetch,
-  DEFAULT_SERVICES,
   displayLevel,
   INITIAL_SERVICE,
   isDue,
   serviceAlert,
   serviceSubtitle,
+  summaryUrl,
   type ServiceConfig,
   type ServiceState,
 } from './lib/services.ts';
@@ -73,7 +82,17 @@ class PanelController {
   private readonly popupList = mustGet<HTMLUListElement>('popup-list');
   private readonly serviceList = mustGet<HTMLUListElement>('service-list');
 
-  private readonly services: readonly ServiceConfig[] = DEFAULT_SERVICES;
+  private readonly addOpen = mustGet<HTMLButtonElement>('add-open');
+  private readonly addForm = mustGet<HTMLFormElement>('add-form');
+  private readonly addUrl = mustGet<HTMLInputElement>('add-url');
+  private readonly addSubmit = mustGet<HTMLButtonElement>('add-submit');
+  private readonly addCancel = mustGet<HTMLButtonElement>('add-cancel');
+  private readonly addMessage = mustGet('add-message');
+
+  /** Empty until `settings.json` has been read; the first round waits for it. */
+  private services: readonly ServiceConfig[] = [];
+  /** Raised synchronously: a second Enter mustn't start a second check. */
+  private adding = false;
   private serviceStates = new Map<string, ServiceState>();
   private connectivity: ConnectivityState = INITIAL_CONNECTIVITY;
   /** Where a captive portal last redirected a probe, for the sign-in link. */
@@ -89,12 +108,26 @@ class PanelController {
   /** The last line pushed to the tray, so an unchanged one isn't re-sent. */
   private trayLine: string | null = null;
 
-  start(): void {
+  async start(): Promise<void> {
     this.close.addEventListener('click', () => {
       void hidePanel();
     });
     document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') void hidePanel();
+      if (event.key !== 'Escape') return;
+      // Esc backs out of the add form first, and only then closes the panel.
+      if (!this.addForm.hidden) this.closeAddForm();
+      else void hidePanel();
+    });
+
+    this.addOpen.addEventListener('click', () => {
+      this.openAddForm();
+    });
+    this.addCancel.addEventListener('click', () => {
+      this.closeAddForm();
+    });
+    this.addForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      void this.addService(this.addUrl.value);
     });
 
     // The OS noticing a network change is the best moment to look again,
@@ -112,8 +145,118 @@ class PanelController {
       this.setMode('panel');
     });
 
+    try {
+      this.services = parseSettings(await loadSettingsJson()).services;
+    } catch (error) {
+      // Unreadable (permissions, a locked file): run on the defaults rather
+      // than not at all, and say so. Nothing is written until you change
+      // something, so the file on disk is left alone.
+      this.services = parseSettings(null).services;
+      await showError('Could not read your saved status pages', describeError(error));
+    }
+
     this.render();
     void this.checkNow();
+  }
+
+  private openAddForm(): void {
+    this.addForm.hidden = false;
+    this.addOpen.hidden = true;
+    this.showAddMessage('', 'info');
+    this.addUrl.focus();
+  }
+
+  private closeAddForm(): void {
+    this.addForm.hidden = true;
+    this.addOpen.hidden = false;
+    this.addUrl.value = '';
+    this.showAddMessage('', 'info');
+    this.addOpen.focus();
+  }
+
+  private showAddMessage(text: string, tone: 'info' | 'error' | 'success'): void {
+    this.addMessage.textContent = text;
+    this.addMessage.dataset.tone = tone;
+  }
+
+  /**
+   * Check that a status page can be watched, and add it only if it can.
+   *
+   * The address is checked before anything is fetched, then the page's API is
+   * fetched once, and only a summary the adapter actually parses is accepted.
+   * The list is saved before it changes in memory, so a failed write leaves
+   * the app on what is actually on disk.
+   */
+  private async addService(input: string): Promise<void> {
+    if (this.adding) return;
+    this.adding = true;
+    this.addSubmit.disabled = true;
+
+    try {
+      const normalized = normalizeCandidate(input);
+      if (!normalized.ok) {
+        this.showAddMessage(normalized.error, 'error');
+        return;
+      }
+      // Cheap and certain: no need to ask the network about a page already here.
+      const existing = findExisting(normalized.origin, this.services);
+      if (existing !== undefined) {
+        this.showAddMessage(`You’re already watching this page, as “${existing.name}”.`, 'error');
+        return;
+      }
+
+      this.showAddMessage(`Checking ${new URL(normalized.origin).host}…`, 'info');
+      const outcome = await fetchStatus(summaryUrl(normalized.origin), null);
+      const verdict = judgeCandidate(normalized.origin, outcome, this.services);
+      if (!verdict.ok) {
+        this.showAddMessage(verdict.error, 'error');
+        return;
+      }
+
+      const next = [...this.services, verdict.service];
+      try {
+        await saveSettingsJson(serializeSettings({ services: next }));
+      } catch (error) {
+        this.showAddMessage(`Couldn’t save it: ${describeError(error)}`, 'error');
+        return;
+      }
+
+      this.services = next;
+      // The check already fetched the page; use that reading rather than
+      // showing the new row as "checking" until the next round.
+      const states = new Map(this.serviceStates);
+      states.set(
+        verdict.service.id,
+        applyFetch(verdict.service, INITIAL_SERVICE, outcome, Date.now()),
+      );
+      this.serviceStates = states;
+      // You were just told its state; don't pop it up at you as news.
+      this.popup = acknowledge(reconcile(this.popup, this.activeAlerts()).state);
+
+      this.addUrl.value = '';
+      this.showAddMessage(describeFound(verdict), 'success');
+      this.render();
+    } finally {
+      this.adding = false;
+      this.addSubmit.disabled = false;
+    }
+  }
+
+  /** Stop watching a service. Saved first, like adding. */
+  private async removeService(service: ServiceConfig): Promise<void> {
+    const next = this.services.filter((candidate) => candidate.id !== service.id);
+    try {
+      await saveSettingsJson(serializeSettings({ services: next }));
+    } catch (error) {
+      await showError(`Could not stop watching ${service.name}`, describeError(error));
+      return;
+    }
+    this.services = next;
+    const states = new Map(this.serviceStates);
+    states.delete(service.id);
+    this.serviceStates = states;
+    this.render();
+    await this.syncPopup();
   }
 
   /**
@@ -133,7 +276,11 @@ class PanelController {
       })),
     );
     const next = new Map(this.serviceStates);
+    // The list can change while the fetches are out (a service added or
+    // removed from the panel); only keep results for services still in it.
+    const current = new Set(this.services.map((service) => service.id));
     for (const { service, outcome } of results) {
+      if (!current.has(service.id)) continue;
       next.set(service.id, applyFetch(service, this.stateOf(service), outcome, Date.now()));
     }
     this.serviceStates = next;
@@ -259,7 +406,19 @@ class PanelController {
       shown === 'hold' ? 'on hold' : shown === 'checking' ? 'checking…' : LEVEL_LABELS[shown];
 
     button.append(dot, text, label);
-    item.append(button);
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'icon-button service-remove';
+    remove.textContent = '×';
+    remove.setAttribute('aria-label', `Stop watching ${service.name}`);
+    remove.title = `Stop watching ${service.name}`;
+    remove.addEventListener('click', () => {
+      void this.removeService(service);
+    });
+
+    item.className = 'service-item';
+    item.append(button, remove);
     return item;
   }
 
@@ -432,4 +591,4 @@ function tone(level: Level): 'bad' | 'warn' | 'idle' {
   }
 }
 
-new PanelController().start();
+void new PanelController().start();

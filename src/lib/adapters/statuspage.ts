@@ -150,3 +150,15 @@ function touches(incident: Record<string, unknown>, watchedIds: ReadonlySet<stri
       isRecord(component) && typeof component.id === 'string' && watchedIds.has(component.id),
   );
 }
+
+/** The page's own name (`page.name`), or `null` if the body doesn't carry one. */
+export function readPageName(body: string): string | null {
+  try {
+    const json: unknown = JSON.parse(body);
+    if (!isRecord(json) || !isRecord(json.page)) return null;
+    const name = json.page.name;
+    return typeof name === 'string' && name.trim() !== '' ? name.trim() : null;
+  } catch {
+    return null;
+  }
+}

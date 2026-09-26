@@ -81,4 +81,18 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect(page.locator('#internet')).toHaveAttribute('data-state', 'offline');
     await page.screenshot({ path: `${SHOTS}/offline-${colorScheme}.png` });
   });
+
+  test(`capture: the add form refusing a site (${colorScheme})`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme, reducedMotion: 'reduce' });
+    await startApp(page);
+    await page.route('https://example.com/api/v2/summary.json', (route) =>
+      route.fulfill({ status: 404, headers: { 'Access-Control-Allow-Origin': '*' }, body: '' }),
+    );
+    await page.getByRole('button', { name: '+ Add a status page' }).click();
+    await page.getByLabel('Status page address').fill('example.com');
+    await page.getByRole('button', { name: 'Add', exact: true }).click();
+
+    await expect(page.locator('#add-message')).toHaveAttribute('data-tone', 'error');
+    await page.screenshot({ path: `${SHOTS}/add-refused-${colorScheme}.png` });
+  });
 }

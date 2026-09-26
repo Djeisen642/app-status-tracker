@@ -77,6 +77,8 @@ src/
     connectivity.ts(.test)  # The internet check: probes, verdicts, offline hysteresis
     alerts.ts(.test)    # The popup: which bad states show, and when they show again
     services.ts(.test)  # Watched services: config, due/backoff, level, alert
+    candidate.ts(.test) # Can this site be added? Normalize the address, judge the answer
+    settings.ts(.test)  # settings.json: the watched list; repairs, never refuses
     adapters/
       statuspage.ts(.test)  # /api/v2/summary.json into a Snapshot
     time.ts             # Millisecond constants
@@ -87,15 +89,17 @@ src-tauri/
   src/lib.rs            # Tray, the window's two modes (panel/popup), open_url
   src/probe.rs          # http_probe: one plain-HTTP GET, reported as it came back
   src/fetch.rs          # fetch_status: a status API GET, with ETag, native TLS, size cap
+  src/settings.rs       # settings_load/settings_save: settings.json, written atomically
   src/main.rs           # Binary entry point
   tauri.conf.json       # Opaque, frameless, alwaysOnTop, skipTaskbar, hidden-until-clicked
   capabilities/         # Least-privilege permission set
 e2e/
-  harness.ts            # startApp(), setNetwork(), setGitHub(), setCursor(), advanceToNextCheck()
+  harness.ts            # startApp(), setNetwork(), setGitHub(), setCursor(), setStatusApi(), advanceToNextCheck()
   panel.spec.ts         # The panel, driven in a real browser
   connectivity.spec.ts  # The connection check, with the network routed by Playwright
   popup.spec.ts         # The popup: raise, auto-close, dismiss, click through
   services.spec.ts      # GitHub and Cursor from real captures: rows, popups, links, unknown
+  add.spec.ts           # Adding a page: checked first, refused with a reason; removing; persistence
   capture.spec.ts       # Screenshots into docs/screenshots/, light and dark
 fixtures/
   statuspage/           # Real status-page responses, byte-for-byte (never reformatted)
@@ -220,8 +224,29 @@ docs/
 - **The panel does not hide on blur (yet).** Clicking the tray icon blurs the
   panel before the click arrives, so a naive hide-on-blur turns "click to close"
   into "click to reopen". It needs a debounce and a real desktop to test on.
+- **A site is added only after it is proven watchable.** `candidate.ts`
+  normalizes the address without the network (web hosts only, http upgraded,
+  path dropped, duplicates caught by origin), then one fetch of its
+  `/api/v2/summary.json` must parse with the real adapter. Every refusal says
+  why, and the reasons are kept distinct on purpose: "couldn't reach" (maybe a
+  typo, maybe offline) is not "unsupported" (wrong kind of page), and neither
+  is a 5xx (try again). Don't loosen this to "add it and see": a page added on
+  hope sits as `unknown` forever. The duplicate check runs again on where the
+  fetch _landed_, because `status.github.com` redirects to
+  `www.githubstatus.com`.
+- **The watched list is `settings.json`, saved before memory changes.** Add
+  and remove write the file first, so a failed write leaves the app on what
+  is on disk. `settings.rs` writes it atomically (temp file and rename): it is
+  the only record of what you added. `parseSettings` repairs a broken file
+  (drops bad entries, falls back to the defaults for garbage) rather than
+  refusing to start, and keeps an empty list, because removing everything is
+  a choice. `DEFAULT_SERVICES` is only the first-launch list.
+- **The e2e harness seeds storage once per test, not once per page load.** A
+  reload must find what the app saved, or persistence can't be tested; a
+  sessionStorage flag marks the seeding done.
 - **Settings will be an overlay in the one window, not a second window**, as in
   task-tracker: a second window needs its own capability set and positioning.
+  The add form lives in the panel's footer for now.
 - **The frontend must run framework-free in a plain browser too.** Every native
   call in `tauri.ts` is guarded by `isTauri()` and degrades to a no-op or a
   browser equivalent. This keeps `pnpm run dev` a fast loop with no Rust build,

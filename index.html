@@ -48,12 +48,32 @@
 
       <ul id="service-list" class="service-list" aria-label="Services" hidden></ul>
 
-      <section id="empty" class="empty">
-        <p class="empty-title">No services yet</p>
-        <p class="empty-body">
-          Services you watch will show up here, with the worst of them on the tray icon.
-        </p>
+      <section id="empty" class="empty" hidden>
+        <p class="empty-title">Nothing to watch</p>
+        <p class="empty-body">Add a status page below, and its state will show up here.</p>
       </section>
+
+      <footer class="panel-foot">
+        <button id="add-open" class="add-open" type="button">+ Add a status page</button>
+        <form id="add-form" class="add-form" hidden novalidate>
+          <label for="add-url" class="add-label">Status page address</label>
+          <div class="add-row">
+            <input
+              id="add-url"
+              class="add-input"
+              type="text"
+              inputmode="url"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              placeholder="status.example.com"
+            />
+            <button id="add-submit" class="add-submit" type="submit">Add</button>
+            <button id="add-cancel" class="icon-button" type="button" aria-label="Cancel">×</button>
+          </div>
+          <p id="add-message" class="add-message" role="status" aria-live="polite"></p>
+        </form>
+      </footer>
     </main>
 
     <script type="module" src="/src/main.ts"></script>

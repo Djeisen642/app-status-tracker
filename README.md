@@ -12,8 +12,9 @@ and borrows its stack, its tooling and its guardrails wholesale.
 ## Status
 
 **Phase 1, in progress.** The app checks your internet connection and watches
-**GitHub's** and **Cursor's** status pages, and pops up when any of them goes
-bad. Adding your own services waits for the settings panel (phase 3). The plan, and what each phase delivers, is in
+**GitHub's** and **Cursor's** status pages out of the box, and pops up when any
+of them goes bad. You can add other status pages, and each one is checked
+before it's added. The plan, and what each phase delivers, is in
 [`docs/future-work.md`](docs/future-work.md).
 
 | All clear                                      | During an outage                                         |
@@ -66,6 +67,33 @@ Plain HTTP is deliberate: a captive portal (hotel, airport, conference Wi-Fi)
 can only intercept an unencrypted request, and intercepting one whose correct
 answer is fixed is how it gets caught. One failed round is ignored, so a Wi-Fi
 roam doesn't flicker the status.
+
+## Adding a status page
+
+**+ Add a status page** at the bottom of the panel takes an address in any
+reasonable shape (`status.example.com`, a full URL, or a link to one incident)
+and **checks it before adding it**:
+
+| What it finds                                                     | What happens                                                  |
+| ----------------------------------------------------------------- | ------------------------------------------------------------- |
+| A Statuspage API answering with a summary the app can read        | Added, named from the page, showing its state at once         |
+| No such API (404), or something that isn't a summary (a homepage) | Refused: "isn't a supported status page", and what is         |
+| No answer at all                                                  | Refused: "couldn't reach", so a typo isn't called unsupported |
+| A server error                                                    | Refused: try again in a minute                                |
+| A page you already watch (any path on it, or `http://`)           | Refused, naming the service, without fetching anything        |
+| Not a web address, `localhost`, or a bare name                    | Refused before anything is fetched                            |
+
+"Supported" means Atlassian Statuspage, the kind GitHub and Cursor use, for
+now; other providers come with more adapters. The check is strict on purpose:
+a page added on hope would sit in the panel as "unknown" forever.
+
+To stop watching one, hover its row (or tab to it) and click the **×** that
+replaces its level. The list is saved to `settings.json` in the app's config
+directory, written atomically, and a broken file is repaired rather than
+stopping the app. GitHub and Cursor are only the starting list; remove them
+like any other.
+
+![Refusing a site](docs/screenshots/add-refused-light.png)
 
 ## The popup
 

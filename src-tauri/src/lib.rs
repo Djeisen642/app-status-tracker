@@ -7,6 +7,7 @@
 
 mod fetch;
 mod probe;
+mod settings;
 
 use std::sync::Mutex;
 
@@ -137,6 +138,8 @@ pub fn run() {
             open_url,
             probe::http_probe,
             fetch::fetch_status,
+            settings::settings_load,
+            settings::settings_save,
         ])
         .setup(|app| {
             app.manage(probe::ProbeClient::new()?);

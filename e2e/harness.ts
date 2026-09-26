@@ -12,7 +12,8 @@ import { readFileSync } from 'node:fs';
 import { expect, type Page } from '@playwright/test';
 
 import { PROBES } from '../src/lib/connectivity.ts';
-import { apiUrl, DEFAULT_SERVICES } from '../src/lib/services.ts';
+import { apiUrl, DEFAULT_SERVICES, summaryUrl } from '../src/lib/services.ts';
+import { BROWSER_SETTINGS_KEY } from '../src/lib/tauri.ts';
 
 /** A fixed Monday, 10:30 local. */
 export const MONDAY_1030 = new Date(2026, 7, 3, 10, 30);
@@ -96,6 +97,8 @@ export interface SeedOptions {
   github?: GitHubState;
   /** Cursor's status API at launch. Defaults to `operational` (synthetic). */
   cursor?: CursorState;
+  /** A `settings.json` to start from. Unset is a first launch. */
+  settings?: unknown;
 }
 
 /** Freeze the clock, start from empty storage, and load the app. */
@@ -112,9 +115,21 @@ export async function startApp(page: Page, options: SeedOptions = {}): Promise<v
         route.fulfill({ contentType: 'text/html', body: '<title>Status</title>' }),
       );
   }
-  await page.addInitScript(() => {
-    localStorage.clear();
-  });
+  // Seeded once per test, not on every load: a reload must find what the app
+  // saved, or persistence could never be tested. sessionStorage survives a
+  // reload in the same tab, so it marks the seeding as done.
+  await page.addInitScript(
+    ({ key, settings }) => {
+      if (sessionStorage.getItem('e2e-seeded') !== null) return;
+      sessionStorage.setItem('e2e-seeded', '1');
+      localStorage.clear();
+      if (settings !== null) localStorage.setItem(key, settings);
+    },
+    {
+      key: BROWSER_SETTINGS_KEY,
+      settings: options.settings === undefined ? null : JSON.stringify(options.settings),
+    },
+  );
   await page.goto('/');
   // Let startup awaits flush, then wait for the first check to land.
   await page.clock.runFor(100);
@@ -146,6 +161,36 @@ export async function setGitHub(page: Page, state: GitHubState): Promise<void> {
 /** Answer Cursor's status API with `state` from now on. Never the real network. */
 export async function setCursor(page: Page, state: CursorState): Promise<void> {
   await answer(page, apiUrl(CURSOR), state === 'down' ? null : cursorBody(state));
+}
+
+/**
+ * Answer any site's status API: `body` with `status`, or a refused
+ * connection when `body` is `null`. For the add form's checks.
+ */
+export async function setStatusApi(
+  page: Page,
+  origin: string,
+  body: string | null,
+  status = 200,
+): Promise<void> {
+  const url = summaryUrl(origin);
+  await page.unroute(url);
+  await page.route(url, (route) =>
+    body === null
+      ? route.abort('connectionrefused')
+      : route.fulfill({
+          status,
+          contentType: status === 200 ? 'application/json' : 'text/html',
+          headers: { 'Access-Control-Allow-Origin': '*' },
+          body,
+        }),
+  );
+}
+
+/** Settings as the app last saved them in the browser build. */
+export async function readSavedSettings(page: Page): Promise<unknown> {
+  const text = await page.evaluate((key) => localStorage.getItem(key), BROWSER_SETTINGS_KEY);
+  return text === null ? null : (JSON.parse(text) as unknown);
 }
 
 /** Serve `body` as a status API's JSON, or refuse the connection when `null`. */
