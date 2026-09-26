@@ -179,8 +179,6 @@ button {
   border-radius: 8px;
   background: transparent;
   color: var(--ink-faint);
-  font-size: 18px;
-  line-height: 1;
   cursor: pointer;
 }
 
@@ -192,6 +190,19 @@ button {
 .icon-button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+/*
+ * Every icon in the app is a drawn SVG (`currentColor` stroke), never a
+ * Unicode glyph: a bare character like × or ⚙ is rendered by whatever font
+ * the OS falls back to for that codepoint, which differs by platform and can
+ * come out as a blurry bitmap emoji. An SVG is the same crisp vector at any
+ * size or DPI, on every platform, always.
+ */
+.icon-glyph {
+  width: 16px;
+  height: 16px;
+  flex: none;
 }
 
 /* --- Settings --------------------------------------------------------------
@@ -404,20 +415,31 @@ button {
   text-transform: uppercase;
 }
 
+/*
+ * One grouped card, not a stack of separately bordered, shadowed tiles: the
+ * latter is the same "card soup" every SaaS dashboard uses. This is the
+ * native list pattern instead (macOS System Settings, Mail, Files): a single
+ * surface, rows separated by a hairline, no per-row border or shadow.
+ */
 .service-list {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin: 0;
-  padding: 0 10px 10px;
-  overflow-y: auto;
+  margin: 0 10px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden auto;
   list-style: none;
 }
 
-/* A service is its tile (opens the status page) plus a remove button. */
+/* A service is its row (opens the status page) plus a remove button. */
 .service-item {
   position: relative;
+}
+
+.service-item:not(:last-child) .service-row {
+  border-bottom: 1px solid var(--line);
 }
 
 .row {
@@ -429,10 +451,9 @@ button {
 .service-row {
   width: 100%;
   min-height: 46px;
-  padding: 9px 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
+  padding: 9px 14px;
+  border: 0;
+  background: transparent;
   text-align: left;
   cursor: pointer;
   transition: background-color 120ms ease-out;
@@ -443,15 +464,17 @@ button {
 }
 
 .service-row:focus-visible {
+  position: relative;
+  z-index: 1;
   outline: 2px solid var(--accent);
-  outline-offset: -1px;
+  outline-offset: -2px;
 }
 
-/* A service in trouble carries its colour on the tile's edge too. */
+/* A service in trouble carries its colour down the row's left edge. */
 .service-row[data-state='degraded'],
 .service-row[data-state='partial'],
 .service-row[data-state='major'] {
-  border-color: color-mix(in srgb, var(--tone) 35%, var(--line));
+  background: color-mix(in srgb, var(--tone) 6%, transparent);
   box-shadow: inset 3px 0 0 var(--tone);
 }
 
@@ -574,11 +597,6 @@ button {
 
 .add-open:hover {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
-}
-
-.add-plus {
-  font-size: 16px;
-  line-height: 1;
 }
 
 .add-open:focus-visible,

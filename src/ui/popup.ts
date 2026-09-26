@@ -19,6 +19,7 @@ import {
 import { describeError } from '../lib/errors.ts';
 import { toneOf } from '../lib/summary.ts';
 import { hidePanel, preparePopup, presentPanel, revealPopup, showError } from '../lib/tauri.ts';
+import { closeIcon } from './icons.ts';
 
 export class Popup {
   private state: PopupState = EMPTY_POPUP;
@@ -164,7 +165,7 @@ export class Popup {
     const close = document.createElement('button');
     close.type = 'button';
     close.className = 'icon-button alert-close';
-    close.textContent = '×';
+    close.append(closeIcon());
     close.setAttribute('aria-label', `Dismiss: ${alert.title}`);
     close.addEventListener('click', (event) => {
       event.stopPropagation();
