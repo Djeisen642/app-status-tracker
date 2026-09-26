@@ -12,8 +12,14 @@ describe('worstLevel', () => {
     expect(worstLevel(['degraded', 'major', 'operational'])).toBe('major');
   });
 
-  it('ranks unknown above every real outage, because blind is worse than red', () => {
-    expect(worstLevel(['major', 'unknown'])).toBe('unknown');
+  it('ranks a known outage above blindness, so a real red is never hidden', () => {
+    expect(worstLevel(['unknown', 'major'])).toBe('major');
+    expect(worstLevel(['unknown', 'degraded'])).toBe('degraded');
+  });
+
+  it('never lets blindness read as green or as mere maintenance', () => {
+    expect(worstLevel(['operational', 'unknown'])).toBe('unknown');
+    expect(worstLevel(['maintenance', 'unknown'])).toBe('unknown');
   });
 
   it('accepts any iterable, not only arrays', () => {

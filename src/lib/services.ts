@@ -125,8 +125,9 @@ const ALERTING: ReadonlySet<Level> = new Set<Level>(['degraded', 'partial', 'maj
 /**
  * The service's alert for the popup, or `null` while it's fine.
  *
- * Keyed on the level and the open incidents, so an update to the same outage
- * stays quiet while a worse level or a new incident pops again.
+ * Grouped by service, carrying the level and open incidents, so `reconcile`
+ * can tell a worse level or a new incident (pop again) from the same outage
+ * easing or moving on (stay quiet).
  */
 export function serviceAlert(service: ServiceConfig, state: ServiceState): Alert | null {
   const level = displayLevel(state);
@@ -136,7 +137,9 @@ export function serviceAlert(service: ServiceConfig, state: ServiceState): Alert
   const incidentIds = snapshot.incidents.map((incident) => incident.id).sort();
   return {
     key: ['service', service.id, level, ...incidentIds].join(':'),
+    group: `service:${service.id}`,
     level,
+    incidents: incidentIds,
     title: `${service.name}: ${LEVEL_LABELS[level]}`,
     detail: serviceDetail(snapshot),
     link: { label: 'View status page', url: service.pageUrl },

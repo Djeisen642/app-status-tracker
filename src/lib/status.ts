@@ -7,17 +7,23 @@
  */
 
 /**
- * Ordered from best to worst. `unknown` is the worst on purpose: a fetch that
- * failed means the app is blind, and a tracker that shows green while blind is
- * worse than none. It must never be quietly treated as `operational`.
+ * Ordered by urgency, least to most: what should win when several things are
+ * true at once (the headline, the tray line, a page's rollup).
+ *
+ * `unknown` means the app is blind, and it must never be quietly treated as
+ * `operational`, which is why it ranks above it and above maintenance. But it
+ * ranks *below* a known outage: "can't read Linear's status" must not take the
+ * headline from "GitHub is having a major outage". It used to rank worst of
+ * all, and an adversarial review caught exactly that: the neutral grey
+ * headline hid a real red outage behind "1 more with issues".
  */
 export const LEVELS = [
   'operational',
   'maintenance',
+  'unknown',
   'degraded',
   'partial',
   'major',
-  'unknown',
 ] as const;
 
 export type Level = (typeof LEVELS)[number];
@@ -32,7 +38,7 @@ export const LEVEL_LABELS: Readonly<Record<Level, string>> = {
   unknown: 'unknown',
 };
 
-/** `true` when `a` is strictly worse than `b`. */
+/** `true` when `a` is strictly more urgent than `b`. */
 export function isWorse(a: Level, b: Level): boolean {
   return LEVELS.indexOf(a) > LEVELS.indexOf(b);
 }

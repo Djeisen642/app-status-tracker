@@ -469,6 +469,16 @@ button {
   border-top: 1px solid var(--line);
 }
 
+.settings-problem {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  color: color-mix(in srgb, var(--warn) 75%, var(--ink));
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .add-open {
   display: flex;
   align-items: center;

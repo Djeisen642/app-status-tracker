@@ -8,7 +8,7 @@
  */
 
 import type { Connectivity } from './connectivity.ts';
-import type { Level } from './status.ts';
+import { isWorse, type Level } from './status.ts';
 
 export interface AlertLink {
   readonly label: string;
@@ -17,13 +17,17 @@ export interface AlertLink {
 }
 
 export interface Alert {
-  /**
-   * What makes this alert *this* alert. Built from the check, the level and
-   * the incident, so the same outage re-checked keeps its key, while a worse
-   * level or a new incident gets a new one and pops again.
-   */
+  /** Identifies this alert on screen, for dismissing it. */
   readonly key: string;
+  /**
+   * The check it comes from: one service, or the connection. Alerts in the
+   * same group are the same trouble developing, and are compared with each
+   * other rather than treated as strangers (see `escalates`).
+   */
+  readonly group: string;
   readonly level: Level;
+  /** Open incident ids, so a *new* incident can be told from an old one. */
+  readonly incidents: readonly string[];
   readonly title: string;
   readonly detail: string;
   /** The status page (or sign-in page) to open. `null` when there is nothing to open. */
@@ -47,7 +51,9 @@ export function connectivityAlert(
     case 'offline':
       return {
         key: 'internet:offline',
+        group: 'internet',
         level: 'major',
+        incidents: [],
         title: 'No internet connection',
         detail: 'Service status is on hold until it’s back.',
         link: null,
@@ -55,7 +61,9 @@ export function connectivityAlert(
     case 'portal':
       return {
         key: 'internet:portal',
+        group: 'internet',
         level: 'degraded',
+        incidents: [],
         title: 'Wi-Fi sign-in required',
         detail: 'This network wants you to sign in before it lets anything through.',
         link: { label: 'Open the sign-in page', url: portalUrl ?? probeUrl },
@@ -69,51 +77,97 @@ export function connectivityAlert(
 export interface PopupState {
   /** On screen now, in the order they arrived. */
   readonly shown: readonly Alert[];
-  /** Keys the user closed, remembered while the alert is still active. */
-  readonly dismissed: readonly string[];
+  /**
+   * What the user closed, per group, remembered while that trouble lasts. Each
+   * holds the *peak* seen since (worst level, every incident), so a level that
+   * flaps between partial and major doesn't pop again on every swing up.
+   */
+  readonly dismissed: readonly Alert[];
 }
 
 export const EMPTY_POPUP: PopupState = { shown: [], dismissed: [] };
 
 export interface Reconciled {
   readonly state: PopupState;
-  /** `true` when something new arrived, i.e. the popup should come forward. */
+  /** `true` when something new or worse arrived, i.e. the popup should come forward. */
   readonly raised: boolean;
+}
+
+/**
+ * Is `next` news compared with `seen`? Only if it is worse, or brings an
+ * incident that wasn't there. Getting better, or one of several incidents
+ * resolving, is not news: an adversarial review caught both re-popping a
+ * dismissed popup, when the key still carried the level and incident list.
+ */
+export function escalates(seen: Alert, next: Alert): boolean {
+  return (
+    isWorse(next.level, seen.level) || next.incidents.some((id) => !seen.incidents.includes(id))
+  );
 }
 
 /**
  * Fold what is wrong right now into the popup.
  *
- * - A new key arrives: shown, and `raised` so the window comes up.
- * - A key already shown: stays, updated in place (its detail may have moved on).
- * - A key no longer active: removed, so recovery clears the popup by itself.
- * - A dismissed key: stays hidden while active, forgotten once it clears, so
- *   the next outage of the same kind pops again.
+ * - A new group arrives: shown, and `raised` so the window comes up.
+ * - A group already shown: updated in place; raised again only if it escalated.
+ * - A dismissed group: stays hidden while it lasts, unless it escalates.
+ * - A group no longer active: removed, and its dismissal forgotten, so the
+ *   next outage of the same kind pops again.
+ * - A *suspended* group (a service while the connection is down: still
+ *   broken as far as anyone knows, just not being checked) is taken off screen
+ *   but keeps its dismissal. Treating "not checked right now" as "recovered"
+ *   was the other bug the review found: a Wi-Fi blip re-popped every
+ *   dismissed outage.
  */
-export function reconcile(state: PopupState, active: readonly Alert[]): Reconciled {
-  const activeKeys = new Set(active.map((alert) => alert.key));
-  const byKey = new Map(active.map((alert) => [alert.key, alert]));
+export function reconcile(
+  state: PopupState,
+  active: readonly Alert[],
+  suspended: readonly Alert[] = [],
+): Reconciled {
+  const suspendedGroups = new Set(suspended.map((alert) => alert.group));
 
-  const dismissed = state.dismissed.filter((key) => activeKeys.has(key));
-  const kept = state.shown
-    .map((alert) => byKey.get(alert.key))
-    .filter((alert): alert is Alert => alert !== undefined);
+  const shown: Alert[] = [];
+  let raised = false;
+  // Keep what was already on screen in its place, updated.
+  for (const previous of state.shown) {
+    const next = active.find((alert) => alert.group === previous.group);
+    if (next === undefined) continue;
+    if (escalates(previous, next)) raised = true;
+    shown.push(next);
+  }
 
-  const known = new Set([...kept.map((alert) => alert.key), ...dismissed]);
-  const arrived = active.filter((alert) => !known.has(alert.key));
+  const dismissed: Alert[] = [];
+  for (const previous of state.dismissed) {
+    const next = active.find((alert) => alert.group === previous.group);
+    if (next === undefined) {
+      if (suspendedGroups.has(previous.group)) dismissed.push(previous);
+      continue;
+    }
+    if (escalates(previous, next)) {
+      shown.push(next);
+      raised = true;
+    } else {
+      dismissed.push(peak(previous, next));
+    }
+  }
 
-  return {
-    state: { shown: [...kept, ...arrived], dismissed },
-    raised: arrived.length > 0,
-  };
+  const known = new Set([...shown, ...dismissed].map((alert) => alert.group));
+  for (const alert of active) {
+    if (known.has(alert.group)) continue;
+    shown.push(alert);
+    raised = true;
+  }
+
+  return { state: { shown, dismissed }, raised };
 }
 
-/** Close one alert. It won't come back until its check recovers or changes. */
+/** Close one alert. It won't come back until its check recovers or gets worse. */
 export function dismiss(state: PopupState, key: string): PopupState {
-  if (!state.shown.some((alert) => alert.key === key)) return state;
+  const closing = state.shown.find((alert) => alert.key === key);
+  if (closing === undefined) return state;
   return {
-    shown: state.shown.filter((alert) => alert.key !== key),
-    dismissed: [...state.dismissed, key],
+    shown: state.shown.filter((alert) => alert !== closing),
+    dismissed: [...state.dismissed.filter((alert) => alert.group !== closing.group), closing],
   };
 }
 
@@ -122,8 +176,18 @@ export function dismiss(state: PopupState, key: string): PopupState {
  * open and says the same thing, so a popup would only repeat it.
  */
 export function acknowledge(state: PopupState): PopupState {
+  const groups = new Set(state.shown.map((alert) => alert.group));
   return {
     shown: [],
-    dismissed: [...state.dismissed, ...state.shown.map((alert) => alert.key)],
+    dismissed: [...state.dismissed.filter((alert) => !groups.has(alert.group)), ...state.shown],
+  };
+}
+
+/** The worst of two sightings of the same trouble: its level, and every incident. */
+function peak(seen: Alert, next: Alert): Alert {
+  return {
+    ...next,
+    level: isWorse(seen.level, next.level) ? seen.level : next.level,
+    incidents: [...new Set([...seen.incidents, ...next.incidents])],
   };
 }

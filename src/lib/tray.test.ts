@@ -77,4 +77,13 @@ describe('formatTrayStatus', () => {
       ]),
     ).toBe('GitHub: major outage');
   });
+
+  it('names a real outage before a service it cannot read', () => {
+    expect(
+      formatTrayStatus([
+        { name: 'Linear', level: 'unknown' },
+        { name: 'GitHub', level: 'major' },
+      ]),
+    ).toBe('GitHub: major outage · Linear: unknown');
+  });
 });

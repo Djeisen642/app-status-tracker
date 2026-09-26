@@ -30,20 +30,22 @@ export type Network = 'up' | 'down';
  * reacts to the value, not that GitHub's API sends it that way. `down` fails
  * the request outright.
  */
-export type GitHubState = 'operational' | 'outage' | 'down';
+export type GitHubState = 'operational' | 'outage' | 'degraded' | 'down';
 
 const GITHUB_OPERATIONAL = readFileSync(
   new URL('../fixtures/statuspage/github-2026-09-25-operational.json', import.meta.url),
   'utf8',
 );
 
-function githubBody(state: 'operational' | 'outage'): string {
+function githubBody(state: 'operational' | 'outage' | 'degraded'): string {
   if (state === 'operational') return GITHUB_OPERATIONAL;
   const summary = JSON.parse(GITHUB_OPERATIONAL) as {
     components: { name: string; status: string }[];
   };
   for (const component of summary.components) {
-    if (component.name === 'Actions') component.status = 'major_outage';
+    if (component.name === 'Actions') {
+      component.status = state === 'outage' ? 'major_outage' : 'degraded_performance';
+    }
   }
   return JSON.stringify(summary);
 }
@@ -99,6 +101,8 @@ export interface SeedOptions {
   cursor?: CursorState;
   /** A `settings.json` to start from. Unset is a first launch. */
   settings?: unknown;
+  /** The file's raw text instead, for one that isn't valid settings at all. */
+  settingsText?: string;
 }
 
 /** Freeze the clock, start from empty storage, and load the app. */
@@ -127,7 +131,9 @@ export async function startApp(page: Page, options: SeedOptions = {}): Promise<v
     },
     {
       key: BROWSER_SETTINGS_KEY,
-      settings: options.settings === undefined ? null : JSON.stringify(options.settings),
+      settings:
+        options.settingsText ??
+        (options.settings === undefined ? null : JSON.stringify(options.settings)),
     },
   );
   await page.goto('/');

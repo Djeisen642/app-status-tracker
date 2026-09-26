@@ -138,6 +138,10 @@ desktop webview.
   Windows. Adding a page, quitting and relaunching is the check that it
   persists on a real desktop; the browser build's persistence is what e2e
   proves.
+- **The popup's first frame.** It is sized while hidden, the page switches to
+  popup mode, and it is shown 34ms later so it has painted. Whether a hidden
+  WebView2 paints in that window, or the panel still flashes for a frame, is
+  unverified.
 - **Resizing between modes.** The window is moved then resized when it
   switches between the 360×440 panel and the popup. On a mixed-DPI
   multi-monitor setup the logical-to-physical conversion is the part most

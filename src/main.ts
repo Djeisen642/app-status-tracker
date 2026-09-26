@@ -39,7 +39,8 @@ import {
   presentPanel,
   fetchStatus,
   loadSettingsJson,
-  presentPopup,
+  preparePopup,
+  revealPopup,
   saveSettingsJson,
   probeUrl,
   setTrayStatus,
@@ -51,7 +52,12 @@ import {
   judgeCandidate,
   normalizeCandidate,
 } from './lib/candidate.ts';
-import { parseSettings, serializeSettings } from './lib/settings.ts';
+import {
+  DEFAULT_SETTINGS,
+  readSettings,
+  serializeSettings,
+  type Settings,
+} from './lib/settings.ts';
 import {
   apiUrl,
   applyFetch,
@@ -93,9 +99,22 @@ class PanelController {
   private readonly addSubmit = mustGet<HTMLButtonElement>('add-submit');
   private readonly addCancel = mustGet<HTMLButtonElement>('add-cancel');
   private readonly addMessage = mustGet('add-message');
+  private readonly settingsProblem = mustGet('settings-problem');
 
   /** Empty until `settings.json` has been read; the first round waits for it. */
-  private services: readonly ServiceConfig[] = [];
+  private settings: Settings = { ...DEFAULT_SETTINGS, services: [] };
+  /**
+   * `false` when the file on disk couldn't be read or understood. The app then
+   * runs on the defaults in memory and refuses to save, because saving would
+   * replace the real list with defaults-plus-one-change.
+   */
+  private settingsWritable = true;
+  /** Every change to the list goes through this chain, one at a time. */
+  private settingsWrite: Promise<unknown> = Promise.resolve();
+  /** Service rows by id, updated in place so focus and clicks survive a render. */
+  private readonly rows = new Map<string, ServiceRow>();
+  /** What the popup last drew, so an unchanged popup isn't rebuilt under the pointer. */
+  private popupDrawn = '';
   /** Raised synchronously: a second Enter mustn't start a second check. */
   private adding = false;
   private serviceStates = new Map<string, ServiceState>();
@@ -110,8 +129,14 @@ class PanelController {
   private timer: number | undefined;
   /** The last bridge failure shown, so a persistent one isn't a dialog every 5s. */
   private shownError: string | null = null;
-  /** The last line pushed to the tray, so an unchanged one isn't re-sent. */
+  /** The last line the tray accepted, so an unchanged one isn't re-sent. */
   private trayLine: string | null = null;
+  /** The last tray failure shown, so a persistent one isn't a dialog every round. */
+  private trayError: string | null = null;
+
+  private get services(): readonly ServiceConfig[] {
+    return this.settings.services;
+  }
 
   async start(): Promise<void> {
     this.close.addEventListener('click', () => {
@@ -151,14 +176,17 @@ class PanelController {
     });
 
     try {
-      this.services = parseSettings(await loadSettingsJson()).services;
+      const loaded = readSettings(await loadSettingsJson());
+      this.settings = loaded.settings;
+      this.settingsWritable = loaded.writable;
     } catch (error) {
-      // Unreadable (permissions, a locked file): run on the defaults rather
-      // than not at all, and say so. Nothing is written until you change
-      // something, so the file on disk is left alone.
-      this.services = parseSettings(null).services;
-      await showError('Could not read your saved status pages', describeError(error));
+      // Unreadable (a sync client or antivirus holding the file, permissions):
+      // run on the defaults rather than not at all, and never save over it.
+      this.settings = DEFAULT_SETTINGS;
+      this.settingsWritable = false;
+      this.settingsProblem.title = describeError(error);
     }
+    this.settingsProblem.hidden = this.settingsWritable;
 
     this.render();
     void this.checkNow();
@@ -198,6 +226,10 @@ class PanelController {
     this.addSubmit.disabled = true;
 
     try {
+      if (!this.settingsWritable) {
+        this.showAddMessage(LOCKED, 'error');
+        return;
+      }
       const normalized = normalizeCandidate(input);
       if (!normalized.ok) {
         this.showAddMessage(normalized.error, 'error');
@@ -218,15 +250,23 @@ class PanelController {
         return;
       }
 
-      const next = [...this.services, verdict.service];
+      let added: boolean;
       try {
-        await saveSettingsJson(serializeSettings({ services: next }));
+        // Re-checked inside the queue: another add may have landed first.
+        added = await this.changeServices((current) =>
+          findExisting(verdict.service.pageUrl, current) === undefined
+            ? [...current, verdict.service]
+            : null,
+        );
       } catch (error) {
         this.showAddMessage(`Couldn’t save it: ${describeError(error)}`, 'error');
         return;
       }
+      if (!added) {
+        this.showAddMessage('You’re already watching this page.', 'error');
+        return;
+      }
 
-      this.services = next;
       // The check already fetched the page; use that reading rather than
       // showing the new row as "checking" until the next round.
       const states = new Map(this.serviceStates);
@@ -236,7 +276,8 @@ class PanelController {
       );
       this.serviceStates = states;
       // You were just told its state; don't pop it up at you as news.
-      this.popup = acknowledge(reconcile(this.popup, this.activeAlerts()).state);
+      const { active, suspended } = this.alerts();
+      this.popup = acknowledge(reconcile(this.popup, active, suspended).state);
 
       this.addUrl.value = '';
       this.showAddMessage(describeFound(verdict), 'success');
@@ -249,19 +290,48 @@ class PanelController {
 
   /** Stop watching a service. Saved first, like adding. */
   private async removeService(service: ServiceConfig): Promise<void> {
-    const next = this.services.filter((candidate) => candidate.id !== service.id);
+    if (!this.settingsWritable) {
+      await showError(`Could not stop watching ${service.name}`, LOCKED);
+      return;
+    }
     try {
-      await saveSettingsJson(serializeSettings({ services: next }));
+      await this.changeServices((current) =>
+        current.filter((candidate) => candidate.id !== service.id),
+      );
     } catch (error) {
       await showError(`Could not stop watching ${service.name}`, describeError(error));
       return;
     }
-    this.services = next;
     const states = new Map(this.serviceStates);
     states.delete(service.id);
     this.serviceStates = states;
     this.render();
     await this.syncPopup();
+  }
+
+  /**
+   * Change the list: saved first, then applied, one change at a time.
+   *
+   * `change` runs against the list as it is *when its turn comes*, not as it
+   * was when the click happened, so an add and a remove that overlap both
+   * land. Without the queue each built its list from the same starting point
+   * and the later save silently undid the earlier one. Returns `false` when
+   * `change` declines (returns `null`).
+   */
+  private changeServices(
+    change: (current: readonly ServiceConfig[]) => readonly ServiceConfig[] | null,
+  ): Promise<boolean> {
+    const run = async (): Promise<boolean> => {
+      const services = change(this.services);
+      if (services === null) return false;
+      const next = { ...this.settings, services };
+      await saveSettingsJson(serializeSettings(next));
+      this.settings = next;
+      return true;
+    };
+    const result = this.settingsWrite.then(run, run);
+    this.settingsWrite = result.catch(() => undefined);
+    return result;
   }
 
   /**
@@ -318,9 +388,12 @@ class PanelController {
       const verdicts = results.map(({ probe, outcome }) => judgeProbe(probe, outcome));
       this.connectivity = observe(this.connectivity, combineVerdicts(verdicts), browserOffline);
       this.portalUrl = portalLocation(results);
-      // Services only while online: offline, every fetch would fail, and each
-      // failure would count toward calling a healthy vendor "unknown".
-      if (this.connectivity.status === 'online') await this.pollServices();
+      // Services only while the connection is plainly fine: offline, or in the
+      // round after a failed probe, their fetches fail for local reasons, and
+      // each failure counts toward calling a healthy vendor "unknown".
+      if (this.connectivity.status === 'online' && this.connectivity.failures === 0) {
+        await this.pollServices();
+      }
       this.lastChecked = new Date();
       this.shownError = null;
       this.render();
@@ -363,7 +436,7 @@ class PanelController {
     this.empty.hidden = !none;
     this.serviceList.hidden = none;
     this.servicesLabel.hidden = none;
-    this.serviceList.replaceChildren(...this.services.map((service) => this.serviceRow(service)));
+    this.renderRows();
     void this.pushTrayLine();
   }
 
@@ -374,26 +447,48 @@ class PanelController {
     }));
   }
 
-  /** One service. Its subtitle can come off the network: `textContent` only. */
-  private serviceRow(service: ServiceConfig): HTMLLIElement {
-    const state = this.stateOf(service);
-    const connection = this.connectivity.status;
-    const online = connection === 'online';
-    const level = displayLevel(state);
-    // On hold means the connection is known to be the problem. While it is
-    // still being checked at launch, the service is simply checking too.
-    const held = connection === 'offline' || connection === 'portal';
-    const shown = held ? 'hold' : (level ?? 'checking');
+  /**
+   * Bring the service rows in line with the list, updating each in place.
+   *
+   * Rebuilding them every round (every 5 to 30 seconds) threw away keyboard
+   * focus mid-Tab, and dropped a click whose press and release straddled a
+   * rebuild. Rows are created once per service and only their contents
+   * change; a row is only moved when the order actually changed, because
+   * moving a node blurs it.
+   */
+  private renderRows(): void {
+    const ids = new Set(this.services.map((service) => service.id));
+    for (const [id, row] of this.rows) {
+      if (ids.has(id)) continue;
+      row.item.remove();
+      this.rows.delete(id);
+    }
 
+    this.services.forEach((service, index) => {
+      let row = this.rows.get(service.id);
+      if (row === undefined) {
+        row = this.createRow(service.id);
+        this.rows.set(service.id, row);
+      }
+      this.updateRow(row, service);
+      if (this.serviceList.children[index] !== row.item) {
+        this.serviceList.insertBefore(row.item, this.serviceList.children[index] ?? null);
+      }
+    });
+  }
+
+  /** A row's elements. Its handlers look the service up by id when clicked. */
+  private createRow(id: string): ServiceRow {
     const item = document.createElement('li');
+    item.className = 'service-item';
+
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'row service-row';
-    button.dataset.service = service.id;
-    button.dataset.state = shown;
-    button.title = `Open ${service.pageUrl}`;
+    button.dataset.service = id;
     button.addEventListener('click', () => {
-      void this.open(service.pageUrl);
+      const service = this.services.find((candidate) => candidate.id === id);
+      if (service !== undefined) void this.open(service.pageUrl);
     });
 
     const dot = document.createElement('span');
@@ -404,56 +499,73 @@ class PanelController {
     text.className = 'row-text';
     const name = document.createElement('span');
     name.className = 'row-name';
-    name.textContent = service.name;
-    text.append(name);
-    const subtitle = serviceSubtitle(state, online);
-    if (subtitle !== null) {
-      const small = document.createElement('span');
-      small.className = 'row-subtitle';
-      small.textContent = subtitle;
-      text.append(small);
-    }
+    const subtitle = document.createElement('span');
+    subtitle.className = 'row-subtitle';
+    text.append(name, subtitle);
 
     const label = document.createElement('span');
     label.className = 'row-level pill';
-    label.textContent =
-      shown === 'hold' ? 'on hold' : shown === 'checking' ? 'checking…' : LEVEL_LABELS[shown];
-
     button.append(dot, text, label);
 
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'icon-button service-remove';
     remove.textContent = '×';
-    remove.setAttribute('aria-label', `Stop watching ${service.name}`);
-    remove.title = `Stop watching ${service.name}`;
     remove.addEventListener('click', () => {
-      void this.removeService(service);
+      const service = this.services.find((candidate) => candidate.id === id);
+      if (service !== undefined) void this.removeService(service);
     });
 
-    item.className = 'service-item';
     item.append(button, remove);
-    return item;
+    return { item, button, name, subtitle, label, remove };
+  }
+
+  /** Everything in a row that can change. Network text: `textContent` only. */
+  private updateRow(row: ServiceRow, service: ServiceConfig): void {
+    const state = this.stateOf(service);
+    const connection = this.connectivity.status;
+    const level = displayLevel(state);
+    // On hold means the connection is known to be the problem. While it is
+    // still being checked at launch, the service is simply checking too.
+    const held = connection === 'offline' || connection === 'portal';
+    const shown = held ? 'hold' : (level ?? 'checking');
+
+    row.button.dataset.state = shown;
+    row.button.title = `Open ${service.pageUrl}`;
+    row.name.textContent = service.name;
+    const subtitle = serviceSubtitle(state, connection === 'online');
+    row.subtitle.textContent = subtitle ?? '';
+    row.subtitle.hidden = subtitle === null;
+    row.label.textContent =
+      shown === 'hold' ? 'on hold' : shown === 'checking' ? 'checking…' : LEVEL_LABELS[shown];
+    row.remove.setAttribute('aria-label', `Stop watching ${service.name}`);
+    row.remove.title = `Stop watching ${service.name}`;
   }
 
   /**
-   * Everything wrong right now, as alerts. While the connection is down, its
-   * alert is the only one: every service would otherwise read as broken for
-   * a reason that has nothing to do with the vendor.
+   * Everything wrong right now, as alerts, split in two.
+   *
+   * While the connection is down its alert is the only *active* one: every
+   * service would otherwise read as broken for a reason that has nothing to
+   * do with the vendor. The services' last known alerts are *suspended*
+   * rather than dropped, so a dismissal survives the blip instead of the same
+   * outage popping again when the Wi-Fi comes back.
    */
-  private activeAlerts(): Alert[] {
+  private alerts(): { active: Alert[]; suspended: Alert[] } {
     const probe = PROBES[0]?.url ?? '';
     const internet = connectivityAlert(this.connectivity.status, this.portalUrl, probe);
-    if (internet !== null) return [internet];
-    if (this.connectivity.status !== 'online') return [];
-    return this.services
+    const services = this.services
       .map((service) => serviceAlert(service, this.stateOf(service)))
       .filter((alert): alert is Alert => alert !== null);
+    if (internet !== null) return { active: [internet], suspended: services };
+    if (this.connectivity.status !== 'online') return { active: [], suspended: services };
+    return { active: services, suspended: [] };
   }
 
   /** Bring the popup in line with what is wrong now: raise it, update it, or close it. */
   private async syncPopup(): Promise<void> {
-    const { state, raised } = reconcile(this.popup, this.activeAlerts());
+    const { active, suspended } = this.alerts();
+    const { state, raised } = reconcile(this.popup, active, suspended);
     this.popup = state;
     this.renderPopup();
 
@@ -470,20 +582,22 @@ class PanelController {
     // Measured while still hidden: the popup is laid out off-screen in panel
     // mode precisely so this works without flashing it inside an open panel.
     const height = Math.ceil(mustGet('popup').getBoundingClientRect().height);
-    let shown: boolean;
     try {
-      shown = await presentPopup(height);
+      // Two steps, so the window never shows the panel's first frame at the
+      // popup's size: size it while hidden, switch what the page draws, let
+      // that paint, and only then show it.
+      const prepared = await preparePopup(height);
+      if (!prepared) {
+        // The panel is open and already says it.
+        this.popup = acknowledge(this.popup);
+        this.renderPopup();
+        return;
+      }
+      this.setMode('popup');
+      await revealPopup();
     } catch (error) {
       // Its own message: this is the popup failing, not the connection check.
       await showError('Could not show the status popup', describeError(error));
-      return;
-    }
-    if (shown) {
-      this.setMode('popup');
-    } else {
-      // The panel is open and already says it.
-      this.popup = acknowledge(this.popup);
-      this.renderPopup();
     }
   }
 
@@ -496,7 +610,11 @@ class PanelController {
     document.body.dataset.mode = mode;
   }
 
+  /** Rebuilt only when what it says changed, so a click isn't lost to a redraw. */
   private renderPopup(): void {
+    const drawn = JSON.stringify(this.popup.shown.map((alert) => [alert.key, alert.detail]));
+    if (drawn === this.popupDrawn) return;
+    this.popupDrawn = drawn;
     this.popupList.replaceChildren(...this.popup.shown.map((alert) => this.alertRow(alert)));
   }
 
@@ -578,17 +696,38 @@ class PanelController {
     }
   }
 
+  /**
+   * Push the tray line if it changed. Remembered only once the tray took it:
+   * caching it before the call meant one failure left the tray stale until the
+   * text happened to change. A persistent failure is shown once, not per round.
+   */
   private async pushTrayLine(): Promise<void> {
     const line = formatTrayStatus(this.trayEntries(), this.connectivity.status);
     if (line === this.trayLine) return;
-    this.trayLine = line;
     try {
       await setTrayStatus(line);
+      this.trayLine = line;
+      this.trayError = null;
     } catch (error) {
-      await showError('Could not update the tray', describeError(error));
+      const detail = describeError(error);
+      if (detail === this.trayError) return;
+      this.trayError = detail;
+      await showError('Could not update the tray', detail);
     }
   }
 }
+
+interface ServiceRow {
+  readonly item: HTMLLIElement;
+  readonly button: HTMLButtonElement;
+  readonly name: HTMLSpanElement;
+  readonly subtitle: HTMLSpanElement;
+  readonly label: HTMLSpanElement;
+  readonly remove: HTMLButtonElement;
+}
+
+const LOCKED =
+  'Your saved status pages couldn’t be read, so changes aren’t being saved over them. Fix or remove settings.json, then restart the app.';
 
 /** How loudly a level is drawn in the popup. */
 function tone(level: Level): 'bad' | 'warn' | 'idle' {

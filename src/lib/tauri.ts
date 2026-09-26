@@ -51,16 +51,31 @@ export async function probeUrl(url: string): Promise<ProbeOutcome> {
 }
 
 /**
- * Show the popup, `height` CSS pixels tall, without taking focus.
- *
- * Resolves `false` when the panel is already open and nothing was shown. In a
- * browser there is no window to manage, so the page itself becomes the popup.
+ * Size the hidden window for the popup, `height` CSS pixels tall, without
+ * showing it. Resolves `false`, changing nothing, when the panel is already
+ * open. In a browser there is no window, so the page itself becomes the popup.
  */
-export async function presentPopup(height: number): Promise<boolean> {
+export async function preparePopup(height: number): Promise<boolean> {
   if (!isTauri()) return true;
 
   const { invoke } = await import('@tauri-apps/api/core');
-  return await invoke<boolean>('present_popup', { height });
+  return await invoke<boolean>('prepare_popup', { height });
+}
+
+/**
+ * Show the prepared popup, without taking focus.
+ *
+ * Waits a beat first, so the page has painted the popup before the window
+ * appears; otherwise the first frame shown at the popup's size is the panel's.
+ * A timeout rather than requestAnimationFrame, which a hidden webview may never
+ * run. Whether 34ms is enough on every machine is unverified.
+ */
+export async function revealPopup(): Promise<void> {
+  if (!isTauri()) return;
+
+  await new Promise((resolve) => setTimeout(resolve, 34));
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('reveal_popup');
 }
 
 /** Grow the popup into the full panel, focused. Rust announces it with `show-panel`. */

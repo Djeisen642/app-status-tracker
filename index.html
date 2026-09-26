@@ -68,6 +68,14 @@
       </section>
 
       <footer class="panel-foot">
+        <!--
+          Shown when settings.json couldn't be read or understood: the defaults
+          are running in memory, and nothing is saved over the real file.
+        -->
+        <p id="settings-problem" class="settings-problem" role="status" hidden>
+          Your saved status pages couldn’t be read, so this is the default list and changes won’t be
+          saved. Fix or remove settings.json, then restart.
+        </p>
         <button id="add-open" class="add-open" type="button">
           <span class="add-plus" aria-hidden="true">+</span> Add a status page
         </button>

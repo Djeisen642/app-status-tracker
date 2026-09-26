@@ -156,7 +156,9 @@ describe('serviceAlert, against the real Cursor incident', () => {
   it('pops up with the incident, keyed on it, linking the status page', () => {
     expect(serviceAlert(CURSOR, state)).toEqual({
       key: 'service:cursor:degraded:bfcck6qks18q',
+      group: 'service:cursor',
       level: 'degraded',
+      incidents: ['bfcck6qks18q'],
       title: 'Cursor: degraded',
       detail: 'Investigating service degradation — Grok Bot',
       link: { label: 'View status page', url: 'https://status.cursor.com' },
@@ -184,7 +186,9 @@ describe('serviceAlert (synthetic outage variants of the real capture)', () => {
     const alert = serviceAlert(GITHUB, run([ok(githubWith('major_outage'))]));
     expect(alert).toEqual({
       key: 'service:github:major',
+      group: 'service:github',
       level: 'major',
+      incidents: [],
       title: 'GitHub: major outage',
       detail: 'Actions',
       link: { label: 'View status page', url: 'https://www.githubstatus.com' },

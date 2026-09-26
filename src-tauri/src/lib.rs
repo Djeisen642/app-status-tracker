@@ -69,13 +69,16 @@ fn set_tray_status(status: String, item: tauri::State<'_, StatusMenuItem>) -> Re
     item.0.set_text(status).map_err(|err| err.to_string())
 }
 
-/// Show the popup, `height` logical pixels tall, *without* taking focus.
+/// Size the window for the popup, `height` logical pixels tall, but don't
+/// show it yet: `reveal_popup` does, once the webview has drawn the popup.
+/// Showing in the same step displayed the panel's last frame at popup size
+/// for a moment, which an adversarial review caught.
 ///
 /// Returns `false`, and changes nothing, when the panel is already open: it
 /// says the same thing, and shrinking it into a popup under the user's cursor
 /// would be worse than not popping up at all.
 #[tauri::command]
-fn present_popup(
+fn prepare_popup(
     window: WebviewWindow,
     height: f64,
     mode: tauri::State<'_, WindowMode>,
@@ -93,8 +96,17 @@ fn present_popup(
     let _ = window.set_focusable(false);
     let height = height.clamp(POPUP_MIN_HEIGHT, PANEL_SIZE.height);
     place_top_right(&window, LogicalSize::new(PANEL_SIZE.width, height));
-    window.show().map_err(|err| err.to_string())?;
     Ok(true)
+}
+
+/// Show the prepared popup, without focus. A no-op if a tray click turned the
+/// window back into the panel in the meantime: that path has shown it already.
+#[tauri::command]
+fn reveal_popup(window: WebviewWindow, mode: tauri::State<'_, WindowMode>) -> Result<(), String> {
+    if mode.get() != Mode::Popup {
+        return Ok(());
+    }
+    window.show().map_err(|err| err.to_string())
 }
 
 /// Grow the window into the full panel and focus it: the popup was clicked.
@@ -133,7 +145,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             set_tray_status,
-            present_popup,
+            prepare_popup,
+            reveal_popup,
             present_panel,
             open_url,
             probe::http_probe,

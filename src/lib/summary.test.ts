@@ -74,6 +74,19 @@ describe('headline', () => {
     expect(headline('checking', [{ name: 'GitHub', level: null }]).tone).toBe('idle');
   });
 
+  it('headlines a real outage over a service it cannot read', () => {
+    expect(
+      headline('online', [
+        { name: 'Linear', level: 'unknown' },
+        { name: 'GitHub', level: 'major' },
+      ]),
+    ).toMatchObject({
+      tone: 'bad',
+      title: 'GitHub is having a major outage',
+      detail: '2 services watched · 1 more with issues',
+    });
+  });
+
   it('pluralizes a lone service', () => {
     expect(headline('online', [{ name: 'GitHub', level: 'operational' }]).detail).toBe(
       '1 service watched',

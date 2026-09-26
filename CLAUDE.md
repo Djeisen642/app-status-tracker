@@ -96,6 +96,7 @@ src-tauri/
   capabilities/         # Least-privilege permission set
 e2e/
   harness.ts            # startApp(), setNetwork(), setGitHub(), setCursor(), setStatusApi(), advanceToNextCheck()
+  review.spec.ts        # Regressions from the adversarial review, one per finding
   panel.spec.ts         # The panel, driven in a real browser
   connectivity.spec.ts  # The connection check, with the network routed by Playwright
   popup.spec.ts         # The popup: raise, auto-close, dismiss, click through
@@ -143,10 +144,14 @@ docs/
   own root CA work (rustls with bundled roots rejects it), and SChannel needs
   no C toolchain, where reqwest's default (aws-lc-rs) does. The probes share
   the crate but refuse https on purpose.
-- **`unknown` is the worst level, never a quiet green.** A failed fetch means
-  the app is blind. `LEVELS` orders `unknown` above `major` on purpose, and
-  nothing may map a failure to `operational`. A status tracker that shows green
-  while it can't see is worse than none.
+- **`unknown` is never a quiet green, and never hides a real outage.** A
+  failed fetch means the app is blind, so nothing may map a failure to
+  `operational`, and `LEVELS` ranks `unknown` above `operational` and
+  `maintenance`. But it ranks _below_ `degraded`, `partial` and `major`: it
+  used to rank worst of all, and the headline then read "Can't read Linear's
+  status" in grey while GitHub was down, the real outage reduced to "1 more
+  with issues". `LEVELS` is urgency order, and the headline, the tray line and
+  a page's rollup all read it.
 - **Checks are a chain of timeouts, never an interval.** The connection check
   schedules its next run when the current one finishes, so after the machine
   sleeps one pending timeout fires on wake instead of a backlog. It also reruns
@@ -178,15 +183,25 @@ docs/
   to the page that explains it (the status page; for a captive portal, the
   sign-in page it redirected to). The rules live in `alerts.ts` and each
   answers a specific annoyance:
-  - **It pops on a transition, not on every check.** An alert's `key` is the
-    check, the level and the incident, so the same outage re-checked keeps its
-    key and stays quiet, while a worse level or a new incident pops again.
+  - **It pops on a transition, not on every check.** Alerts have a `group`
+    (one service, or the connection), and a group's new alert is compared with
+    what was last seen (`escalates`): only a worse level or a new incident is
+    news. Getting better, or one of two incidents resolving, is not. The first
+    version keyed alerts on level and incident list, so an outage _easing_
+    re-popped a dismissed popup.
   - **It closes itself on recovery.** A popup saying GitHub is down after
     GitHub came back is a lie you have to clean up.
   - **Dismissed stays dismissed while the outage lasts**, and is forgotten when
-    it clears, so the next outage of the same kind pops again.
+    it clears, so the next outage of the same kind pops again. A dismissal
+    remembers the _peak_ (worst level, every incident), so a level flapping
+    between partial and major doesn't re-pop on each swing up.
+  - **Offline suspends a service's alert; it doesn't clear it.** While the
+    connection is down only its alert is active, and the services' alerts are
+    passed to `reconcile` as `suspended`: off screen, dismissal kept. Treating
+    "not checked right now" as "recovered" re-popped every dismissed outage
+    after a Wi-Fi blip.
   - **It doesn't pop over an open panel.** The panel already says it; the
-    alerts are acknowledged instead (`present_popup` returns `false`).
+    alerts are acknowledged instead (`prepare_popup` returns `false`).
   - **It doesn't auto-hide on a timer.** Outages matter most when you were
     away from the desk, which is exactly when a timed toast would be gone.
     It is not a native OS notification: those land in the OS notification
@@ -195,11 +210,17 @@ docs/
     has to persist what has been shown, so a relaunch mid-incident doesn't pop
     it again (task-tracker's persisted `last_check_in`).
 - **The popup never takes focus.** It arrives from a timer while you are typing
-  somewhere else. `present_popup` calls `set_focusable(false)` _before_
-  `show()`, which on Windows is `WS_EX_NOACTIVATE`, so the popup appears
-  without taking the keyboard. `show_panel` sets it focusable again. Don't
-  reorder those, and don't add `set_focus` or an attention request to the popup
-  path.
+  somewhere else. `prepare_popup` calls `set_focusable(false)` before
+  `reveal_popup` calls `show()`, which on Windows is `WS_EX_NOACTIVATE`, so the
+  popup appears without taking the keyboard. `show_panel` sets it focusable
+  again. Don't reorder those, and don't add `set_focus` or an attention
+  request to the popup path.
+- **The popup is sized while hidden and shown after it has painted.** Showing
+  it in the same step as the resize displayed the panel's last frame at popup
+  size. So: `prepare_popup` (resize, hidden), the page switches to popup mode,
+  a short wait (`revealPopup`, 34ms, a timeout because a hidden webview may
+  not run requestAnimationFrame), then `reveal_popup`. Whether 34ms is always
+  enough is unverified on a real desktop.
 - **One window, two modes, and Rust knows which.** A second window for the
   popup would need its own capability set and positioning. Rust keeps the mode
   (`WindowMode`) because a tray click must act differently on a showing popup
@@ -242,6 +263,22 @@ docs/
   (drops bad entries, falls back to the defaults for garbage) rather than
   refusing to start, and keeps an empty list, because removing everything is
   a choice. `DEFAULT_SERVICES` is only the first-launch list.
+- **The watched list can't be saved over a file the app couldn't read.** If
+  `settings.json` exists but can't be read (a sync client or antivirus
+  holding it) or isn't settings at all, the defaults run in memory, the footer
+  says so, and add and remove refuse. Saving then would replace the real list
+  with defaults-plus-one-change. Entries this build doesn't understand (a
+  newer `kind`, a hand edit) and unknown top-level keys are kept aside and
+  written back untouched, never dropped by an unrelated change.
+- **List changes are queued.** `changeServices` runs each change against the
+  list as it is when its turn comes, then saves, then applies. Two changes
+  built from the same starting list used to let the later save undo the
+  earlier one (task-tracker serializes its writes for the same reason).
+- **Rows are updated in place, never rebuilt per round.** `renderRows` keeps
+  one element per service and changes its contents; rebuilding every 5 to 30
+  seconds threw away keyboard focus and dropped clicks that straddled a
+  rebuild. The popup is rebuilt only when what it says changed, for the same
+  reason.
 - **The e2e harness seeds storage once per test, not once per page load.** A
   reload must find what the app saved, or persistence can't be tested; a
   sessionStorage flag marks the seeding done.
