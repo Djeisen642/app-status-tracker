@@ -97,6 +97,44 @@ PY
 Keep `icon.icns` from `tauri icon`; macOS's small entries aren't worth
 hand-tuning until the app has been run there.
 
+## Tray states
+
+The tray icon recolors its dot to the worst current status (`set_tray_tone` in
+`src-tauri/src/lib.rs`), reusing the same four tones the panel's hero and rows
+use (`good`/`warn`/`bad`/`idle` — see `src/lib/summary.ts`'s `Tone`). Each is
+`icon-small.svg` with only the dot's `fill` swapped, kept as its own SVG master
+(not generated from the base one at build time) so the tray state a screenshot
+shows is always traceable back to a committed file:
+
+| File                  | Dot colour                 | Tone   |
+| --------------------- | -------------------------- | ------ |
+| `icon-small.svg`      | `#5ecf8d` (the base green) | `good` |
+| `icon-small-warn.svg` | `#ffc857`                  | `warn` |
+| `icon-small-bad.svg`  | `#ff5d6c`                  | `bad`  |
+| `icon-small-idle.svg` | `#7c8499`                  | `idle` |
+
+These are the dark-mode tone hexes from `src/styles.css`, not the light-mode
+ones: the tile is always dark, so the dot needs the colours tuned to pop on a
+dark background regardless of the OS theme.
+
+Rasterize the three new masters the same way as the base one, straight to
+32×32 (the only size the tray uses; unlike the base icon there's no larger
+`icon-*.svg`/`.ico`/`.icns` counterpart to keep in sync, since these never
+appear as the window or bundle icon):
+
+```bash
+cd src-tauri/icons
+rsvg-convert -w 32 -h 32 icon-small-warn.svg -o 32x32-warn.png
+rsvg-convert -w 32 -h 32 icon-small-bad.svg  -o 32x32-bad.png
+rsvg-convert -w 32 -h 32 icon-small-idle.svg -o 32x32-idle.png
+```
+
+`set_tray_tone` embeds all four PNGs with `tauri::include_image!`, which bakes
+raw pixels into the binary at compile time — no `image` crate, and no
+filesystem read, at runtime. If a tray state's master changes, rebuild the app
+(`cargo build`/`pnpm run build`); the PNG only needs regenerating, no code
+change.
+
 ## Rasterizer notes
 
 - An `objectBoundingBox` gradient collapses on any shape with a zero-width or

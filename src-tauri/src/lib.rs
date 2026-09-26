@@ -15,7 +15,7 @@ mod window;
 
 use tauri::{
     menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent},
     Manager,
 };
 
@@ -29,6 +29,38 @@ struct StatusMenuItem(MenuItem<tauri::Wry>);
 #[tauri::command]
 fn set_tray_status(status: String, item: tauri::State<'_, StatusMenuItem>) -> Result<(), String> {
     item.0.set_text(status).map_err(|err| err.to_string())
+}
+
+/// The tray icon's dot colour: the same four tones the panel's hero and rows
+/// use (`src/lib/summary.ts`'s `Tone`), so there is one decision about what
+/// counts as good/warn/bad/idle, not two.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum TrayTone {
+    Good,
+    Warn,
+    Bad,
+    Idle,
+}
+
+/// Holds the built tray icon so its icon can be swapped after `setup` runs.
+struct TrayHandle(TrayIcon<tauri::Wry>);
+
+/// Recolor the tray icon's dot to the worst current level.
+///
+/// The four PNGs are the same `icon-small.svg` master with only the dot's fill
+/// swapped (see `icons/README.md`); `include_image!` bakes each as raw pixels
+/// into the binary at compile time, so recoloring never touches the
+/// filesystem or pulls in a runtime image-decoding dependency.
+#[tauri::command]
+fn set_tray_tone(tone: TrayTone, tray: tauri::State<'_, TrayHandle>) -> Result<(), String> {
+    let icon = match tone {
+        TrayTone::Good => tauri::include_image!("icons/32x32.png"),
+        TrayTone::Warn => tauri::include_image!("icons/32x32-warn.png"),
+        TrayTone::Bad => tauri::include_image!("icons/32x32-bad.png"),
+        TrayTone::Idle => tauri::include_image!("icons/32x32-idle.png"),
+    };
+    tray.0.set_icon(Some(icon)).map_err(|err| err.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -47,6 +79,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             set_tray_status,
+            set_tray_tone,
             window::prepare_popup,
             window::reveal_popup,
             window::present_panel,
@@ -116,7 +149,8 @@ pub fn run() {
                 tray = tray.icon(icon.clone());
             }
 
-            tray.build(app)?;
+            let tray = tray.build(app)?;
+            app.manage(TrayHandle(tray));
 
             // Declared hidden in tauri.conf.json. Top-right, because top-left
             // belongs to task-tracker's check-in card and bottom-right to

@@ -34,7 +34,7 @@ Status keys: **done** · **partial** · **todo**
 | done   | Service rows in the panel (dot, name, level, incident or affected components); a row opens its status page.                                                                                                                                                                                                                                                                                                               |
 | done   | Services raise the popup (degraded, partial, major) with **View status page**; on hold and silent while offline.                                                                                                                                                                                                                                                                                                          |
 | done   | GitHub and Cursor are the first-launch list (`DEFAULT_SERVICES`); after that the list is `settings.json`, edited from the panel.                                                                                                                                                                                                                                                                                          |
-| todo   | The tray icon recolors its dot to the worst level, including grey for offline. Icons swap only when the aggregate changes.                                                                                                                                                                                                                                                                                                |
+| done   | The tray icon recolors its dot to the worst level: green/amber/red/grey, reusing the panel hero's tone (`headline().tone`, `summary.ts`) rather than a second colour rule — offline reads red like the hero does, not grey. Swaps only when the aggregate tone changes. Reviewed but never run against a real tray; see Known unknowns.                                                                                   |
 
 ### Phase 2: tell me when it changes
 
@@ -150,3 +150,11 @@ desktop webview.
   switches between the 360×440 panel and the popup. On a mixed-DPI
   multi-monitor setup the logical-to-physical conversion is the part most
   likely to be off.
+- **The tray icon's recolor.** `set_tray_tone` calls `TrayIcon::set_icon` with
+  one of four `include_image!`-embedded 32×32 PNGs (`icons/32x32{,-warn,-bad,-idle}.png`).
+  It compiles, and the four PNGs were checked magnified at 32px in this
+  sandbox, but nothing here can show a real system tray: whether Windows,
+  AppIndicator (Linux) and macOS's menu bar all repaint on `set_icon` without
+  a flash or a stale icon until the next OS repaint, and whether the dot
+  still reads at whatever size each OS actually renders (Windows can shrink a
+  32px tray icon further on high-DPI text scaling) needs a real desktop.

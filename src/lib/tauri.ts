@@ -10,6 +10,7 @@
 
 import type { ProbeOutcome } from './connectivity.ts';
 import type { FetchOutcome } from './services.ts';
+import type { Tone } from './summary.ts';
 
 /** `true` only when running inside the Tauri webview. */
 export function isTauri(): boolean {
@@ -150,6 +151,17 @@ export async function setTrayStatus(status: string): Promise<void> {
 
   const { invoke } = await import('@tauri-apps/api/core');
   await invoke('set_tray_status', { status });
+}
+
+/**
+ * Recolor the tray icon's dot to the given tone: green, amber, red or grey,
+ * the same four tones the panel's hero and rows use (`summary.ts`'s `Tone`).
+ */
+export async function setTrayIcon(tone: Tone): Promise<void> {
+  if (!isTauri()) return;
+
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('set_tray_tone', { tone });
 }
 
 /**
