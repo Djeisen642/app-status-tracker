@@ -1,0 +1,24 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":dependencyDashboard"],
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "description": "Group the Tauri JS packages so the API and plugins move together.",
+      "matchPackagePatterns": ["^@tauri-apps/"],
+      "groupName": "tauri (js)"
+    },
+    {
+      "description": "Group the Tauri Rust crates likewise.",
+      "matchManagers": ["cargo"],
+      "matchPackagePatterns": ["^tauri"],
+      "groupName": "tauri (rust)"
+    },
+    {
+      "description": "typescript-eslint pins a TypeScript upper bound (currently <6.1.0). Bumping TypeScript past it silently breaks type-aware linting, so hold major TS bumps for a human.",
+      "matchPackageNames": ["typescript"],
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    }
+  ]
+}

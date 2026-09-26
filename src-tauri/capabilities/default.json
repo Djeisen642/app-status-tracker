@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Least-privilege permissions for the status panel: only the plugin commands the JS bridge actually invokes. Tray updates and window positioning go through app-defined commands in src/lib.rs, which do not pass through the capability system in Tauri v2. Status fetches will too (phase 1), so no http scope is ever needed here.",
+  "windows": ["panel"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-hide",
+    "core:event:allow-listen",
+    "dialog:allow-message"
+  ]
+}

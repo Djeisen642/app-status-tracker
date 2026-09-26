@@ -1,0 +1,120 @@
+name: Release
+
+# Tag the next version once main is green.
+#
+# The version is derived, not typed: `scripts/version.ts` reads the
+# conventional-commit subjects since the last `v*` tag, picks the bump, and
+# writes the number into all four files that carry it. Nothing releasable since
+# the last tag (only chores, docs, refactors) means no release, which is the
+# point — a week of dependency bumps should not manufacture a version.
+#
+# It runs on CI's completion rather than on the push itself, so a tag always
+# points at a commit that passed lint, tests, the build and the Rust gate.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+# Never two releases at once: they would race for the same tag.
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Tag the next version
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      # Full history and tags: the bump is computed from the commits since the
+      # last tag, so a shallow clone would see neither.
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+          fetch-tags: true
+
+      # `workflow_run` hands us the run's commit, but main may have moved on
+      # while CI was running. Releasing a newer, unverified head would tag a
+      # commit nothing has checked — so stop, and let that push's own run do it.
+      - name: Confirm main is still the commit CI passed on
+        id: head
+        run: |
+          head="$(git rev-parse HEAD)"
+          if [ "$head" != "${{ github.event.workflow_run.head_sha }}" ]; then
+            echo "main has moved to $head since CI ran; its own run will release."
+            echo "current=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up pnpm
+        if: steps.head.outputs.current == 'true'
+        uses: pnpm/setup@v2
+
+      # `--experimental-strip-types` runs the script with no build step and no
+      # dependencies, so there is nothing to install here.
+      - name: Set up Node.js
+        if: steps.head.outputs.current == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Work out the next version
+        id: next
+        if: steps.head.outputs.current == 'true'
+        run: |
+          version="$(pnpm run --silent version:next)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ -z "$version" ]; then
+            echo "Nothing releasable since the last tag." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Releasing v$version." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Before the tag exists — the notes are the commits since the *last* one.
+      - name: Write the release notes
+        if: steps.next.outputs.version != ''
+        run: pnpm run --silent version:notes > "$RUNNER_TEMP/notes.md"
+
+      - name: Write the version into all four files
+        if: steps.next.outputs.version != ''
+        run: pnpm run --silent version:sync "${{ steps.next.outputs.version }}"
+
+      # A push authenticated with GITHUB_TOKEN does not trigger workflows, so
+      # this commit cannot start another CI run and another release.
+      - name: Commit and tag
+        if: steps.next.outputs.version != ''
+        env:
+          VERSION: ${{ steps.next.outputs.version }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          # A version declared by hand and released as itself changes no files,
+          # and `git commit` on an empty tree fails. The tag is the release; the
+          # commit only exists when the number actually moved.
+          if git diff --quiet; then
+            echo "The four files already say $VERSION; tagging without a commit."
+          else
+            git commit --all --message "Release v$VERSION"
+          fi
+          git tag --annotate "v$VERSION" --message "v$VERSION"
+          # Atomic: a branch that moved without its tag would leave the next run
+          # computing its bump from the previous tag and releasing the same work
+          # twice.
+          git push --atomic origin main "refs/tags/v$VERSION"
+
+      - name: Publish the GitHub release
+        if: steps.next.outputs.version != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.next.outputs.version }}
+        run: |
+          gh release create "v$VERSION" \
+            --title "v$VERSION" \
+            --notes-file "$RUNNER_TEMP/notes.md"

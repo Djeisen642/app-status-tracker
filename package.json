@@ -1,0 +1,57 @@
+{
+  "name": "app-status-tracker",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Lightweight system-tray utility that watches the status pages of the services you depend on and tells you when one of them changes.",
+  "license": "MIT",
+  "author": "Jason Suttles",
+  "engines": {
+    "node": ">=22.12",
+    "pnpm": ">= 11"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run version:check && pnpm run test",
+    "version:check": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/version.ts check",
+    "version:sync": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/version.ts sync",
+    "version:next": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/version.ts next",
+    "version:notes": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/version.ts notes",
+    "prepare": "lefthook install",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui",
+    "e2e:report": "playwright show-report"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "^2.7.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.63.0",
+    "@tauri-apps/cli": "^2.11.5",
+    "@types/node": "^26.6.2",
+    "@vitest/coverage-v8": "^4.1.10",
+    "eslint": "^10.11.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.12.0",
+    "lefthook": "^2.1.14",
+    "prettier": "^3.9.9",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.70.1",
+    "vite": "^8.3.1",
+    "vitest": "^4.1.10"
+  },
+  "packageManager": "pnpm@11.22.0"
+}

@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>App Status Tracker</title>
+    <link rel="icon" type="image/svg+xml" href="./src-tauri/icons/icon-small.svg" />
+    <!--
+      Linked rather than imported from main.ts on purpose: a JS `import` of CSS
+      injects a <style> tag in dev, which the app's `style-src 'self'` CSP
+      blocks. That failure only appears in the desktop webview, never in
+      `pnpm run dev` in a browser.
+    -->
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body data-mode="panel">
+    <!--
+      The window is frameless and opaque, parked top-right: top-left belongs to
+      task-tracker's check-in card, bottom-right to noticeable-calendar-alert.
+    -->
+    <!--
+      The popup: the same window shrunk to a card when a check goes bad. Laid
+      out off-screen in panel mode rather than display:none, so its height can
+      be measured before the window is resized to fit it.
+    -->
+    <section id="popup" class="popup" aria-live="assertive" aria-label="Status alerts">
+      <ul id="popup-list" class="popup-list"></ul>
+    </section>
+
+    <main id="panel" class="panel" aria-labelledby="app-title">
+      <header class="appbar">
+        <img class="brand" src="./src-tauri/icons/icon-small.svg" alt="" aria-hidden="true" />
+        <h1 id="app-title" class="app-title">Service status</h1>
+        <button id="close" class="icon-button" type="button" aria-label="Close" title="Close (Esc)">
+          ×
+        </button>
+      </header>
+
+      <!--
+        The answer at a glance: the worst thing, in one sentence, on an orb and
+        a tint that take the overall state's colour. Everything below is detail.
+      -->
+      <section id="hero" class="hero" data-tone="idle" aria-live="polite">
+        <span class="orb" aria-hidden="true"></span>
+        <div class="hero-text">
+          <p id="hero-title" class="hero-title">Checking…</p>
+          <p id="hero-detail" class="hero-detail"></p>
+        </div>
+      </section>
+
+      <!-- Always first: every other status depends on it. -->
+      <div class="meta">
+        <div id="internet" class="chip" data-state="checking">
+          <span class="dot" aria-hidden="true"></span>
+          <span class="chip-name">Internet</span>
+          <span id="internet-level" class="chip-level">checking…</span>
+        </div>
+        <span id="checked" class="checked"></span>
+      </div>
+
+      <p id="services-label" class="section-label">Services</p>
+      <ul id="service-list" class="service-list" aria-labelledby="services-label" hidden></ul>
+
+      <section id="empty" class="empty" hidden>
+        <p class="empty-body">
+          Paste a status page's address below. GitHub, Cursor and most SaaS vendors have one.
+        </p>
+      </section>
+
+      <footer class="panel-foot">
+        <!--
+          Shown when settings.json couldn't be read or understood: the defaults
+          are running in memory, and nothing is saved over the real file.
+        -->
+        <p id="settings-problem" class="settings-problem" role="status" hidden>
+          Your saved status pages couldn’t be read, so this is the default list and changes won’t be
+          saved. Fix or remove settings.json, then restart.
+        </p>
+        <button id="add-open" class="add-open" type="button">
+          <span class="add-plus" aria-hidden="true">+</span> Add a status page
+        </button>
+        <form id="add-form" class="add-form" hidden novalidate>
+          <label for="add-url" class="add-label">Status page address</label>
+          <div class="add-row">
+            <input
+              id="add-url"
+              class="add-input"
+              type="text"
+              inputmode="url"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              placeholder="status.example.com"
+            />
+            <button id="add-submit" class="add-submit" type="submit">Add</button>
+            <button id="add-cancel" class="icon-button" type="button" aria-label="Cancel">×</button>
+          </div>
+          <p id="add-message" class="add-message" role="status" aria-live="polite"></p>
+        </form>
+      </footer>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
