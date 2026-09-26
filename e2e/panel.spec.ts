@@ -24,9 +24,11 @@ test('starts cleanly, with the connection first and the services under it', asyn
   expect(errors).toEqual([]);
 });
 
-test('the close button is reachable from the keyboard', async ({ page }) => {
+test('settings and close are reachable from the keyboard, in reading order', async ({ page }) => {
   await startApp(page);
 
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Settings' })).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'Close' })).toBeFocused();
 });

@@ -109,9 +109,9 @@ shows is always traceable back to a committed file:
 | File                  | Dot colour                 | Tone   |
 | --------------------- | -------------------------- | ------ |
 | `icon-small.svg`      | `#5ecf8d` (the base green) | `good` |
-| `icon-small-warn.svg` | `#ffc857`                  | `warn` |
-| `icon-small-bad.svg`  | `#ff5d6c`                  | `bad`  |
-| `icon-small-idle.svg` | `#7c8499`                  | `idle` |
+| `icon-small-warn.svg` | `#ff9f0a`                  | `warn` |
+| `icon-small-bad.svg`  | `#ff453a`                  | `bad`  |
+| `icon-small-idle.svg` | `#8e8e93`                  | `idle` |
 
 These are the dark-mode tone hexes from `src/styles.css`, not the light-mode
 ones: the tile is always dark, so the dot needs the colours tuned to pop on a

@@ -25,5 +25,5 @@
 
   <circle cx="256" cy="256" r="160" fill="none" stroke="url(#ring)" stroke-width="64" />
 
-  <circle cx="256" cy="256" r="84" fill="#7c8499" />
+  <circle cx="256" cy="256" r="84" fill="#8e8e93" />
 </svg>

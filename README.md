@@ -135,6 +135,13 @@ Right-click for the menu:
 The panel closes with Esc or its × button. Only one copy of the app runs:
 launching it again just opens the panel of the one already in the tray.
 
+## Settings
+
+The gear icon in the top-right opens a sheet over the panel with build info:
+the version, the commit it was built from, and when. Everything else settings
+will eventually hold — component filters, launch at login — is still on the
+[plan](docs/future-work.md); for now the sheet only has one thing to show.
+
 ## Getting started
 
 ```bash

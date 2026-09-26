@@ -15,6 +15,7 @@
  */
 
 import { connectivityAlert, type Alert } from './lib/alerts.ts';
+import { formatBuildInfo } from './lib/build-info.ts';
 import {
   combineVerdicts,
   CONNECTIVITY_LABELS,
@@ -53,6 +54,7 @@ import { formatTrayStatus, type TrayEntry } from './lib/tray.ts';
 import { AddForm } from './ui/add-form.ts';
 import { Popup } from './ui/popup.ts';
 import { ServiceList } from './ui/service-list.ts';
+import { Settings } from './ui/settings.ts';
 import { WatchList } from './watchlist.ts';
 
 function mustGet<T extends HTMLElement>(id: string): T {
@@ -97,6 +99,20 @@ class App {
     },
     (input, say) => this.add(input, say),
   );
+  private readonly settings = new Settings(
+    {
+      open: mustGet('settings-open'),
+      overlay: mustGet('settings'),
+      close: mustGet('settings-close'),
+      buildInfo: mustGet('build-info'),
+      content: mustGet('panel-content'),
+    },
+    formatBuildInfo({
+      version: __APP_VERSION__,
+      commit: __BUILD_COMMIT__,
+      builtAt: __BUILD_DATE__,
+    }),
+  );
 
   private serviceStates = new Map<string, ServiceState>();
   private connectivity: ConnectivityState = INITIAL_CONNECTIVITY;
@@ -128,8 +144,9 @@ class App {
     });
     document.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape') return;
-      // Esc backs out of the add form first, and only then closes the panel.
-      if (this.addForm.isOpen) this.addForm.close();
+      // Esc backs out of an open overlay first, and only then closes the panel.
+      if (this.settings.isOpen) this.settings.close();
+      else if (this.addForm.isOpen) this.addForm.close();
       else void hidePanel();
     });
 
