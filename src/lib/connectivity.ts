@@ -10,6 +10,8 @@
  * they mean.
  */
 
+import { withJitter } from './jitter.ts';
+
 /** What one probe saw, exactly as the bridge reports it. */
 export type ProbeOutcome =
   | { kind: 'response'; status: number; location: string | null; body: string }
@@ -158,18 +160,23 @@ export function observe(
   }
 }
 
+/** The steady online interval's own room, so instances started together don't
+ * all land back on the same probe on the same tick, forever. */
+const STEADY_JITTER = 5_000;
+
 /**
  * How long until the next check.
  *
  * Quick while in doubt (starting up, or one round has failed) so a real
- * outage is confirmed in seconds, and every 30s otherwise. Rechecking offline
- * or behind a portal every 10s is what makes recovery feel immediate.
+ * outage is confirmed in seconds, and every 30s (plus a little jitter)
+ * otherwise. Rechecking offline or behind a portal every 10s is what makes
+ * recovery feel immediate.
  */
-export function nextCheckDelay(state: ConnectivityState): number {
+export function nextCheckDelay(state: ConnectivityState, rand: () => number = Math.random): number {
   if (state.status === 'checking' || (state.status === 'online' && state.failures > 0)) {
     return 5_000;
   }
-  if (state.status === 'online') return 30_000;
+  if (state.status === 'online') return withJitter(30_000, STEADY_JITTER, rand);
   return 10_000;
 }
 

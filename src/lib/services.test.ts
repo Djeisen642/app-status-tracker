@@ -12,6 +12,7 @@ import {
   isDue,
   MAX_BACKOFF,
   POLL_INTERVAL,
+  POLL_JITTER,
   serviceAlert,
   rowView,
   serviceSubtitle,
@@ -19,6 +20,9 @@ import {
   type ServiceConfig,
   type ServiceState,
 } from './services.ts';
+
+/** No randomness: the exact base delay, so scheduling tests stay deterministic. */
+const noJitter = () => 0;
 
 /** Real: GitHub's summary.json as served on 2026-09-25, all operational. */
 const GITHUB_OPERATIONAL = readFileSync(
@@ -75,7 +79,7 @@ function run(
   outcomes: readonly FetchOutcome[],
   from: ServiceState = INITIAL_SERVICE,
 ): ServiceState {
-  return outcomes.reduce((state, outcome) => applyFetch(GITHUB, state, outcome, 0), from);
+  return outcomes.reduce((state, outcome) => applyFetch(GITHUB, state, outcome, 0, noJitter), from);
 }
 
 describe('DEFAULT_SERVICES', () => {
@@ -95,10 +99,27 @@ describe('apiUrl', () => {
 
 describe('applyFetch', () => {
   it('reads the real capture as operational and schedules the next poll', () => {
-    const state = applyFetch(GITHUB, INITIAL_SERVICE, ok(GITHUB_OPERATIONAL, '"v1"'), 1000);
+    const state = applyFetch(
+      GITHUB,
+      INITIAL_SERVICE,
+      ok(GITHUB_OPERATIONAL, '"v1"'),
+      1000,
+      noJitter,
+    );
     expect(displayLevel(state)).toBe('operational');
     expect(state.etag).toBe('"v1"');
     expect(state.nextAt).toBe(1000 + POLL_INTERVAL);
+  });
+
+  it('adds a little jitter on top of the poll interval, never less than it', () => {
+    const state = applyFetch(
+      GITHUB,
+      INITIAL_SERVICE,
+      ok(GITHUB_OPERATIONAL, '"v1"'),
+      1000,
+      () => 0.999999,
+    );
+    expect(state.nextAt).toBe(1000 + POLL_INTERVAL + POLL_JITTER - 1);
   });
 
   it('keeps the reading on a 304, which is what sending the ETag earns', () => {
@@ -141,7 +162,7 @@ describe('isDue and backoff', () => {
   });
 
   it('schedules a failing service by the backoff', () => {
-    const state = applyFetch(GITHUB, run([failed]), failed, 10_000);
+    const state = applyFetch(GITHUB, run([failed]), failed, 10_000, noJitter);
     expect(state.nextAt).toBe(10_000 + backoff(2));
   });
 });
