@@ -9,6 +9,7 @@
 import type { Alert } from './alerts.ts';
 import type { Connectivity } from './connectivity.ts';
 import { parseStatuspageSummary, type Snapshot } from './adapters/statuspage.ts';
+import { withJitter } from './jitter.ts';
 import { LEVEL_LABELS, type Level } from './status.ts';
 
 export interface ServiceConfig {
@@ -68,8 +69,12 @@ export const INITIAL_SERVICE: ServiceState = {
 /** Status summaries are cached for about a minute; asking more often gains nothing. */
 export const POLL_INTERVAL = 60_000;
 
-/** The longest a failing service waits between attempts. */
+/** The longest a failing service waits between attempts, before jitter. */
 export const MAX_BACKOFF = 15 * 60_000;
+
+/** Room added on top of every scheduled poll, so many watched pages (and many
+ * copies of this app) don't all land on the same vendor on the same tick. */
+export const POLL_JITTER = 10_000;
 
 /** Failed fetches in a row before a service reads as unknown. Same reasoning as the connection check. */
 export const UNKNOWN_AFTER = 2;
@@ -89,17 +94,23 @@ export function applyFetch(
   state: ServiceState,
   outcome: FetchOutcome,
   now: number,
+  rand: () => number = Math.random,
 ): ServiceState {
   const fail = (message: string): ServiceState => {
     const failures = state.failures + 1;
-    return { ...state, failures, lastError: message, nextAt: now + backoff(failures) };
+    return {
+      ...state,
+      failures,
+      lastError: message,
+      nextAt: now + withJitter(backoff(failures), POLL_JITTER, rand),
+    };
   };
   const succeed = (snapshot: Snapshot | null, etag: string | null): ServiceState => ({
     snapshot,
     etag,
     failures: 0,
     lastError: null,
-    nextAt: now + POLL_INTERVAL,
+    nextAt: now + withJitter(POLL_INTERVAL, POLL_JITTER, rand),
   });
 
   if (outcome.kind === 'error') return fail(outcome.message);

@@ -141,8 +141,9 @@ describe('nextCheckDelay', () => {
     expect(nextCheckDelay(run(['ok', 'failed']))).toBe(5000);
   });
 
-  it('relaxes once online', () => {
-    expect(nextCheckDelay(run(['ok']))).toBe(30_000);
+  it('relaxes once online, with a little jitter on top', () => {
+    expect(nextCheckDelay(run(['ok']), () => 0)).toBe(30_000);
+    expect(nextCheckDelay(run(['ok']), () => 0.999999)).toBe(34_999);
   });
 
   it('keeps checking while offline or behind a portal, so recovery is prompt', () => {

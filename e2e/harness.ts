@@ -119,6 +119,13 @@ export async function startApp(page: Page, options: SeedOptions = {}): Promise<v
         route.fulfill({ contentType: 'text/html', body: '<title>Status</title>' }),
       );
   }
+  // The poll schedules add a little random jitter on top of their base
+  // interval (see `lib/jitter.ts`), so a real run never lands on the exact
+  // same tick every time. That defeats `advanceToNextCheck`'s exact-second
+  // `clock.runFor`, so pin it to zero here rather than in the app itself.
+  await page.addInitScript(() => {
+    Math.random = () => 0;
+  });
   // Seeded once per test, not on every load: a reload must find what the app
   // saved, or persistence could never be tested. sessionStorage survives a
   // reload in the same tab, so it marks the seeding as done.
