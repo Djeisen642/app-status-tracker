@@ -25,6 +25,19 @@ const GITHUB_OPERATIONAL = readFileSync(
   'utf8',
 );
 
+/** Real: Cursor's summary.json mid-incident (Grok Bot degraded). */
+const CURSOR_INCIDENT = readFileSync(
+  new URL('../../fixtures/statuspage/cursor-2026-09-25-incident.json', import.meta.url),
+  'utf8',
+);
+
+const CURSOR: ServiceConfig = {
+  id: 'cursor',
+  name: 'Cursor',
+  kind: 'statuspage',
+  pageUrl: 'https://status.cursor.com',
+};
+
 /** SYNTHETIC: the real capture with Actions set to a documented outage value. */
 function githubWith(status: string, incidents: unknown[] = []): string {
   const summary = JSON.parse(GITHUB_OPERATIONAL) as {
@@ -129,6 +142,36 @@ describe('isDue and backoff', () => {
   it('schedules a failing service by the backoff', () => {
     const state = applyFetch(GITHUB, run([failed]), failed, 10_000);
     expect(state.nextAt).toBe(10_000 + backoff(2));
+  });
+});
+
+describe('serviceAlert, against the real Cursor incident', () => {
+  const state = applyFetch(
+    CURSOR,
+    INITIAL_SERVICE,
+    { kind: 'response', status: 200, etag: null, url: apiUrl(CURSOR), body: CURSOR_INCIDENT },
+    0,
+  );
+
+  it('pops up with the incident, keyed on it, linking the status page', () => {
+    expect(serviceAlert(CURSOR, state)).toEqual({
+      key: 'service:cursor:degraded:bfcck6qks18q',
+      level: 'degraded',
+      title: 'Cursor: degraded',
+      detail: 'Investigating service degradation — Grok Bot',
+      link: { label: 'View status page', url: 'https://status.cursor.com' },
+    });
+  });
+
+  it('says nothing for someone who only watches the IDE', () => {
+    const narrowed = { ...CURSOR, components: ['IDE'] };
+    const ideOnly = applyFetch(
+      narrowed,
+      INITIAL_SERVICE,
+      { kind: 'response', status: 200, etag: null, url: apiUrl(CURSOR), body: CURSOR_INCIDENT },
+      0,
+    );
+    expect(serviceAlert(narrowed, ideOnly)).toBeNull();
   });
 });
 

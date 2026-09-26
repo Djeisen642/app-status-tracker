@@ -12,9 +12,8 @@ and borrows its stack, its tooling and its guardrails wholesale.
 ## Status
 
 **Phase 1, in progress.** The app checks your internet connection and watches
-**GitHub's** status page, and pops up when either goes bad. Cursor joins once
-its status API has been captured; adding your own services waits for the
-settings panel (phase 3). The plan, and what each phase delivers, is in
+**GitHub's** and **Cursor's** status pages, and pops up when any of them goes
+bad. Adding your own services waits for the settings panel (phase 3). The plan, and what each phase delivers, is in
 [`docs/future-work.md`](docs/future-work.md).
 
 | All clear                                      | During an outage                                         |
@@ -23,8 +22,9 @@ settings panel (phase 3). The plan, and what each phase delivers, is in
 
 ## Watching a status page
 
-GitHub is watched through its Statuspage API (`/api/v2/summary.json`), the same
-API a long tail of vendors serve, fetched once a minute while you're online:
+GitHub and Cursor are both watched through the Statuspage API
+(`/api/v2/summary.json`), the same API a long tail of vendors serve, fetched
+once a minute while you're online:
 
 - **The panel** lists each service with its level; a service in trouble shows
   the incident, or which components are affected, under its name. Click a row
@@ -38,9 +38,12 @@ API a long tail of vendors serve, fetched once a minute while you're online:
 - **While you're offline, services are "on hold"**, and only the connection
   pops up. Blaming GitHub for your Wi-Fi is what this whole app exists to avoid.
 
-Every component on the page counts for now. Picking which ones you care about
-(GitHub's page includes Codespaces, Copilot and Pages) comes with the settings
-panel.
+Every component on the page counts for now, and that is noisier than it
+sounds: the Cursor capture below was taken while only **Grok Bot** was
+degraded, which pops up "Cursor: degraded" for someone who only uses the IDE.
+Choosing the components you care about is the fix; it is built and tested
+(watching only IDE and CLI stays green through that incident) and waits for
+the settings panel to have somewhere to live.
 
 ## The internet connection check
 
@@ -84,7 +87,9 @@ largest screen:
 - **Click it to open the full panel.** It doesn't appear at all while the
   panel is already open.
 
-![A GitHub outage](docs/screenshots/popup-github-light.png)
+![A real Cursor incident](docs/screenshots/popup-cursor-light.png)
+
+That one is real: Cursor's status page as it was served on 25 September 2026.
 
 ## Tray menu
 

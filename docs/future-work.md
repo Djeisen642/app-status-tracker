@@ -25,16 +25,16 @@ Status keys: **done** · **partial** · **todo**
 
 ### Phase 1: one adapter, end to end
 
-| Status  | Item                                                                                                                                                                                                                                                                                                 |
-| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| done    | `fetch_status(url, etag)` in Rust: native TLS (see CLAUDE.md for why not rustls), system proxy, http(s) only, up to 5 redirects followed, 10s timeout, 2 MB cap. Tested against local sockets; a real HTTPS fetch through the sandbox proxy is an opt-in test (`cargo test -- --ignored`).           |
-| partial | Statuspage adapter over `/api/v2/summary.json`, tested against a **real all-green GitHub capture**. The non-operational mapping is Statuspage's documented vocabulary, exercised by labelled synthetic variants; **no capture taken during an incident yet**. Unrecognized values read as `unknown`. |
-| done    | Polling rides the connection check's rounds: each service has a `nextAt`, 60s interval, ETag/304, doubling backoff to 15 min. Skipped while offline.                                                                                                                                                 |
-| todo    | Jitter between services. Irrelevant with one; worth it before there are ten.                                                                                                                                                                                                                         |
-| done    | Service rows in the panel (dot, name, level, incident or affected components); a row opens its status page.                                                                                                                                                                                          |
-| done    | Services raise the popup (degraded, partial, major) with **View status page**; on hold and silent while offline.                                                                                                                                                                                     |
-| partial | Services are built in (`DEFAULT_SERVICES`: GitHub). Cursor waits for a real capture of `status.cursor.com`; your own list waits for phase 3's settings panel.                                                                                                                                        |
-| todo    | The tray icon recolors its dot to the worst level, including grey for offline. Icons swap only when the aggregate changes.                                                                                                                                                                           |
+| Status  | Item                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| done    | `fetch_status(url, etag)` in Rust: native TLS (see CLAUDE.md for why not rustls), system proxy, http(s) only, up to 5 redirects followed, 10s timeout, 2 MB cap. Tested against local sockets; a real HTTPS fetch through the sandbox proxy is an opt-in test (`cargo test -- --ignored`).                                                                                                                                |
+| done    | Statuspage adapter over `/api/v2/summary.json`, tested against **real captures**: GitHub all-green, and **Cursor mid-incident** (a degraded component, indicator `minor`, an open `minor` incident naming it). `partial_outage`, `major_outage`, `under_maintenance` and the `major`/`critical` indicators are still documented vocabulary only; synthetic variants exercise them. Unrecognized values read as `unknown`. |
+| done    | Polling rides the connection check's rounds: each service has a `nextAt`, 60s interval, ETag/304, doubling backoff to 15 min. Skipped while offline.                                                                                                                                                                                                                                                                      |
+| todo    | Jitter between services. Irrelevant with one; worth it before there are ten.                                                                                                                                                                                                                                                                                                                                              |
+| done    | Service rows in the panel (dot, name, level, incident or affected components); a row opens its status page.                                                                                                                                                                                                                                                                                                               |
+| done    | Services raise the popup (degraded, partial, major) with **View status page**; on hold and silent while offline.                                                                                                                                                                                                                                                                                                          |
+| partial | Services are built in (`DEFAULT_SERVICES`: GitHub, Cursor). Your own list waits for phase 3's settings panel.                                                                                                                                                                                                                                                                                                             |
+| todo    | The tray icon recolors its dot to the worst level, including grey for offline. Icons swap only when the aggregate changes.                                                                                                                                                                                                                                                                                                |
 
 ### Phase 2: tell me when it changes
 
@@ -74,10 +74,14 @@ Status keys: **done** · **partial** · **todo**
 
 ## Open questions
 
-- **What does a Statuspage incident actually look like on the wire?** Every
-  capture so far is all-green. The next time GitHub (or any Statuspage vendor)
-  has an incident, save `/api/v2/summary.json` into `fixtures/statuspage/` and
-  replace the synthetic variants in the adapter tests with it.
+- **What do a partial and a major outage look like on the wire?** The Cursor
+  capture confirmed a minor incident. The next time a Statuspage vendor has a
+  bigger one, save `/api/v2/summary.json` into `fixtures/statuspage/` and
+  replace the remaining synthetic variants with it.
+- **Which components should be watched by default?** The Cursor capture is the
+  argument for component filters: an incident on Grok Bot alone makes
+  "Cursor: degraded" pop up for everyone. Phase 3's picker is the real answer;
+  until then, a sensible built-in default per service would cut the noise.
 
 - **Should the probe endpoints be configurable?** Google and Microsoft see a
   request from your IP every 30 seconds while online (Windows already sends

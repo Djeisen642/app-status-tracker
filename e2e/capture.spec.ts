@@ -32,6 +32,15 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await page.screenshot({ path: `${SHOTS}/panel-${colorScheme}.png` });
   });
 
+  test(`capture: the real Cursor incident popup (${colorScheme})`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme, reducedMotion: 'reduce' });
+    await startApp(page, { cursor: 'incident' });
+
+    const popup = page.locator('#popup');
+    await expect(popup).toContainText('Cursor: degraded');
+    await popup.screenshot({ path: `${SHOTS}/popup-cursor-${colorScheme}.png` });
+  });
+
   test(`capture: the GitHub outage popup (${colorScheme})`, async ({ page }) => {
     await page.emulateMedia({ colorScheme, reducedMotion: 'reduce' });
     // SYNTHETIC outage: see `setGitHub` in the harness.

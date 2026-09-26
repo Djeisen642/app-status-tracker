@@ -91,11 +91,11 @@ src-tauri/
   tauri.conf.json       # Opaque, frameless, alwaysOnTop, skipTaskbar, hidden-until-clicked
   capabilities/         # Least-privilege permission set
 e2e/
-  harness.ts            # startApp(), setNetwork(), setGitHub(), advanceToNextCheck()
+  harness.ts            # startApp(), setNetwork(), setGitHub(), setCursor(), advanceToNextCheck()
   panel.spec.ts         # The panel, driven in a real browser
   connectivity.spec.ts  # The connection check, with the network routed by Playwright
   popup.spec.ts         # The popup: raise, auto-close, dismiss, click through
-  services.spec.ts      # GitHub from the real capture: rows, outage popup, link, unknown
+  services.spec.ts      # GitHub and Cursor from real captures: rows, popups, links, unknown
   capture.spec.ts       # Screenshots into docs/screenshots/, light and dark
 fixtures/
   statuspage/           # Real status-page responses, byte-for-byte (never reformatted)
@@ -162,10 +162,12 @@ docs/
   status-page responses byte-for-byte as served (it is in `.prettierignore`
   for that reason). Tests that need a bad state derive it from a real capture
   with documented values swapped in, and are labelled SYNTHETIC; they prove
-  the app reacts to a value, not that the vendor sends it. The Statuspage
-  adapter's non-operational tables are documented vocabulary that no capture
-  has confirmed yet, and an unrecognized value maps to `unknown`. When a vendor
-  has an incident, capture it: that is the fixture this repo most lacks.
+  the app reacts to a value, not that the vendor sends it. Each of the
+  Statuspage adapter's tables says which values a capture has confirmed (the
+  Cursor incident confirmed `degraded_performance`, indicator `minor` and
+  impact `minor`); the rest is documented vocabulary, and an unrecognized
+  value maps to `unknown`. When a vendor has a partial or major outage,
+  capture it: those values are still unconfirmed.
 - **A bad state pops up once, as a small card with a link.** When a check goes
   bad, the one window shrinks to a popup in the top-right corner, with a link
   to the page that explains it (the status page; for a captive portal, the

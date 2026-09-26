@@ -11,6 +11,16 @@ const GITHUB_OPERATIONAL = readFileSync(
 );
 
 /**
+ * Real: Cursor's summary.json as served on 2026-09-25, mid-incident. One
+ * component (Grok Bot) degraded, indicator `minor`, one open incident naming
+ * that component.
+ */
+const CURSOR_INCIDENT = readFileSync(
+  new URL('../../../fixtures/statuspage/cursor-2026-09-25-incident.json', import.meta.url),
+  'utf8',
+);
+
+/**
  * The real capture with some values changed.
  *
  * SYNTHETIC. Only for exercising the mapping tables with Statuspage's
@@ -61,6 +71,43 @@ describe('parseStatuspageSummary, against the real GitHub capture', () => {
 
   it('refuses a filter that matches nothing, rather than watching nothing and calling it green', () => {
     expect(parseStatuspageSummary(GITHUB_OPERATIONAL, ['Actoins']).ok).toBe(false);
+  });
+});
+
+describe('parseStatuspageSummary, against the real Cursor incident', () => {
+  it('reads a degraded component, a minor indicator and a minor incident as degraded', () => {
+    const snapshot = parse(CURSOR_INCIDENT);
+    expect(snapshot.level).toBe('degraded');
+    expect(snapshot.description).toBe('Partially Degraded Service');
+  });
+
+  it('names the affected component', () => {
+    const degraded = parse(CURSOR_INCIDENT).components.filter(
+      (component) => component.level !== 'operational',
+    );
+    expect(degraded).toEqual([{ name: 'Grok Bot', level: 'degraded' }]);
+  });
+
+  it('reads the open incident', () => {
+    expect(parse(CURSOR_INCIDENT).incidents).toEqual([
+      {
+        id: 'bfcck6qks18q',
+        name: 'Investigating service degradation — Grok Bot',
+        level: 'degraded',
+      },
+    ]);
+  });
+
+  it('stays green for someone watching only the IDE, whatever the indicator says', () => {
+    const snapshot = parse(CURSOR_INCIDENT, ['IDE', 'CLI']);
+    expect(snapshot.level).toBe('operational');
+    expect(snapshot.incidents).toEqual([]);
+  });
+
+  it('keeps the incident for someone watching the component it names', () => {
+    const snapshot = parse(CURSOR_INCIDENT, ['Grok Bot']);
+    expect(snapshot.level).toBe('degraded');
+    expect(snapshot.incidents.map((incident) => incident.id)).toEqual(['bfcck6qks18q']);
   });
 });
 

@@ -47,9 +47,45 @@ function githubBody(state: 'operational' | 'outage'): string {
   return JSON.stringify(summary);
 }
 
-const GITHUB = DEFAULT_SERVICES.find((service) => service.id === 'github');
-if (GITHUB === undefined) throw new Error('GitHub is no longer a default service');
+/**
+ * What Cursor's status API answers.
+ *
+ * `incident` is the real capture in `fixtures/`: Grok Bot degraded, indicator
+ * `minor`, one open incident. `operational` is SYNTHETIC: that capture with
+ * every component set operational, the indicator `none` and no incidents, so
+ * specs that aren't about Cursor start from a quiet page. `down` fails the
+ * request outright.
+ */
+export type CursorState = 'operational' | 'incident' | 'down';
+
+const CURSOR_INCIDENT = readFileSync(
+  new URL('../fixtures/statuspage/cursor-2026-09-25-incident.json', import.meta.url),
+  'utf8',
+);
+
+function cursorBody(state: 'operational' | 'incident'): string {
+  if (state === 'incident') return CURSOR_INCIDENT;
+  const summary = JSON.parse(CURSOR_INCIDENT) as {
+    components: { status: string }[];
+    incidents: unknown[];
+    status: { indicator: string; description: string };
+  };
+  for (const component of summary.components) component.status = 'operational';
+  summary.incidents = [];
+  summary.status = { indicator: 'none', description: 'All Systems Operational' };
+  return JSON.stringify(summary);
+}
+
+function service(id: string) {
+  const found = DEFAULT_SERVICES.find((candidate) => candidate.id === id);
+  if (found === undefined) throw new Error(`${id} is no longer a default service`);
+  return found;
+}
+
+const GITHUB = service('github');
+const CURSOR = service('cursor');
 export const GITHUB_PAGE = GITHUB.pageUrl;
+export const CURSOR_PAGE = CURSOR.pageUrl;
 
 export interface SeedOptions {
   /** Simulated wall-clock time. */
@@ -58,6 +94,8 @@ export interface SeedOptions {
   network?: Network;
   /** GitHub's status API at launch. Defaults to `operational`. */
   github?: GitHubState;
+  /** Cursor's status API at launch. Defaults to `operational` (synthetic). */
+  cursor?: CursorState;
 }
 
 /** Freeze the clock, start from empty storage, and load the app. */
@@ -65,12 +103,15 @@ export async function startApp(page: Page, options: SeedOptions = {}): Promise<v
   await page.clock.install({ time: options.now ?? MONDAY_1030 });
   await setNetwork(page, options.network ?? 'up');
   await setGitHub(page, options.github ?? 'operational');
-  // The status page itself, for when a link to it is followed.
-  await page
-    .context()
-    .route(`${GITHUB_PAGE}/`, (route) =>
-      route.fulfill({ contentType: 'text/html', body: '<title>GitHub Status</title>' }),
-    );
+  await setCursor(page, options.cursor ?? 'operational');
+  // The status pages themselves, for when a link to one is followed.
+  for (const pageUrl of [GITHUB_PAGE, CURSOR_PAGE]) {
+    await page
+      .context()
+      .route(`${pageUrl}/`, (route) =>
+        route.fulfill({ contentType: 'text/html', body: '<title>Status</title>' }),
+      );
+  }
   await page.addInitScript(() => {
     localStorage.clear();
   });
@@ -99,17 +140,25 @@ export async function setNetwork(page: Page, network: Network): Promise<void> {
 
 /** Answer GitHub's status API with `state` from now on. Never the real network. */
 export async function setGitHub(page: Page, state: GitHubState): Promise<void> {
-  if (GITHUB === undefined) return;
-  const url = apiUrl(GITHUB);
+  await answer(page, apiUrl(GITHUB), state === 'down' ? null : githubBody(state));
+}
+
+/** Answer Cursor's status API with `state` from now on. Never the real network. */
+export async function setCursor(page: Page, state: CursorState): Promise<void> {
+  await answer(page, apiUrl(CURSOR), state === 'down' ? null : cursorBody(state));
+}
+
+/** Serve `body` as a status API's JSON, or refuse the connection when `null`. */
+async function answer(page: Page, url: string, body: string | null): Promise<void> {
   await page.unroute(url);
   await page.route(url, (route) =>
-    state === 'down'
+    body === null
       ? route.abort('connectionrefused')
       : route.fulfill({
           contentType: 'application/json',
           // The page is served from localhost; this is a cross-origin read.
           headers: { 'Access-Control-Allow-Origin': '*' },
-          body: githubBody(state),
+          body,
         }),
   );
 }

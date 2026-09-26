@@ -7,9 +7,9 @@
  * quiet green.
  *
  * What has been observed, and what hasn't: `fixtures/statuspage/` holds real
- * captures, and so far they are all-operational. The non-operational values in
- * the tables below are Statuspage's documented vocabulary, not yet seen in a
- * capture. An unrecognized value maps to `unknown` rather than being guessed.
+ * captures (GitHub all-green, Cursor mid-incident). Each table below says which
+ * of its values a capture has confirmed; the rest are Statuspage's documented
+ * vocabulary. An unrecognized value maps to `unknown` rather than being guessed.
  */
 
 import type { Level } from '../status.ts';
@@ -32,7 +32,7 @@ export type ParseResult =
   | { readonly ok: true; readonly snapshot: Snapshot }
   | { readonly ok: false; readonly error: string };
 
-/** `component.status`. Only `operational` has been observed in a capture. */
+/** `component.status`. Observed: `operational`, `degraded_performance`. */
 const COMPONENT_LEVELS: Readonly<Record<string, Level>> = {
   operational: 'operational',
   under_maintenance: 'maintenance',
@@ -41,7 +41,7 @@ const COMPONENT_LEVELS: Readonly<Record<string, Level>> = {
   major_outage: 'major',
 };
 
-/** `status.indicator`, the page-wide rollup. Only `none` has been observed. */
+/** `status.indicator`, the page-wide rollup. Observed: `none`, `minor`. */
 const INDICATOR_LEVELS: Readonly<Record<string, Level>> = {
   none: 'operational',
   maintenance: 'maintenance',
@@ -50,7 +50,7 @@ const INDICATOR_LEVELS: Readonly<Record<string, Level>> = {
   critical: 'major',
 };
 
-/** `incident.impact`. No incident has been captured yet. */
+/** `incident.impact`. Observed: `minor`. */
 const IMPACT_LEVELS: Readonly<Record<string, Level>> = {
   none: 'operational',
   maintenance: 'maintenance',

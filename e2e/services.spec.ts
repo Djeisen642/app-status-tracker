@@ -9,7 +9,15 @@
 
 import { expect, test, type Page } from '@playwright/test';
 
-import { advanceToNextCheck, GITHUB_PAGE, setGitHub, setNetwork, startApp } from './harness.ts';
+import {
+  advanceToNextCheck,
+  CURSOR_PAGE,
+  GITHUB_PAGE,
+  setCursor,
+  setGitHub,
+  setNetwork,
+  startApp,
+} from './harness.ts';
 
 function githubRow(page: Page) {
   return page.locator('[data-service="github"]');
@@ -28,6 +36,52 @@ test('lists GitHub as operational from the real capture', async ({ page }) => {
   await expect(githubRow(page)).toContainText('GitHub');
   await expect(githubRow(page)).toContainText('operational');
   await expect(page.locator('#empty')).toBeHidden();
+});
+
+test('a real Cursor incident pops up with its name and a link to status.cursor.com', async ({
+  page,
+  context,
+}) => {
+  await startApp(page, { cursor: 'incident' });
+
+  const popup = page.locator('#popup');
+  await expect(popup).toBeVisible();
+  await expect(popup).toContainText('Cursor: degraded');
+  await expect(popup).toContainText('Investigating service degradation — Grok Bot');
+
+  const [statusPage] = await Promise.all([
+    context.waitForEvent('page'),
+    popup.getByRole('button', { name: 'View status page' }).click(),
+  ]);
+  expect(statusPage.url()).toBe(`${CURSOR_PAGE}/`);
+});
+
+test('the Cursor row shows the incident under its name', async ({ page }) => {
+  await startApp(page, { cursor: 'incident' });
+  await page.locator('#popup').getByText('Cursor: degraded').click();
+
+  const row = page.locator('[data-service="cursor"]');
+  await expect(row).toHaveAttribute('data-state', 'degraded');
+  await expect(row).toContainText('Investigating service degradation — Grok Bot');
+});
+
+test('two services in trouble share one popup', async ({ page }) => {
+  await startApp(page, { github: 'outage', cursor: 'incident' });
+
+  const alerts = page.locator('#popup .alert');
+  await expect(alerts).toHaveCount(2);
+  await expect(page.locator('#popup')).toContainText('GitHub: major outage');
+  await expect(page.locator('#popup')).toContainText('Cursor: degraded');
+});
+
+test('Cursor recovering closes its popup', async ({ page }) => {
+  await startApp(page, { cursor: 'incident' });
+  await expect(page.locator('#popup')).toBeVisible();
+
+  await setCursor(page, 'operational');
+  await nextServicePoll(page);
+
+  await expect(page.locator('#popup')).toBeHidden();
 });
 
 test('pops up on an outage, linking to the status page', async ({ page, context }) => {

@@ -23,11 +23,12 @@ export interface ServiceConfig {
 
 /**
  * Built in until the settings panel exists (phase 3). Only services whose
- * adapter has been checked against a real capture belong here: GitHub's is in
- * `fixtures/statuspage/`. Cursor joins once its response has been captured.
+ * adapter has been checked against a real capture belong here; both of these
+ * are in `fixtures/statuspage/`.
  */
 export const DEFAULT_SERVICES: readonly ServiceConfig[] = [
   { id: 'github', name: 'GitHub', kind: 'statuspage', pageUrl: 'https://www.githubstatus.com' },
+  { id: 'cursor', name: 'Cursor', kind: 'statuspage', pageUrl: 'https://status.cursor.com' },
 ];
 
 /** The API behind the page. */
