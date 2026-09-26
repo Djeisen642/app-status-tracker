@@ -12,8 +12,8 @@
  * vocabulary. An unrecognized value maps to `unknown` rather than being guessed.
  */
 
-import type { Level } from '../status.ts';
-import { worstLevel } from '../status.ts';
+import { worstLevel, type Level } from '../status.ts';
+import { isRecord } from '../untrusted.ts';
 
 export interface Snapshot {
   /** The worst level across the components and incidents being watched. */
@@ -63,10 +63,6 @@ function lookup(table: Readonly<Record<string, Level>>, value: unknown): Level {
   return typeof value === 'string' && Object.hasOwn(table, value)
     ? (table[value] ?? 'unknown')
     : 'unknown';
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**

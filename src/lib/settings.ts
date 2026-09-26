@@ -17,6 +17,7 @@
  */
 
 import { DEFAULT_SERVICES, type ServiceConfig } from './services.ts';
+import { httpsOrigin, isRecord } from './untrusted.ts';
 
 export interface Settings {
   readonly services: readonly ServiceConfig[];
@@ -84,7 +85,8 @@ function parseService(entry: unknown): ServiceConfig | null {
   if (typeof id !== 'string' || id === '' || typeof name !== 'string' || name.trim() === '') {
     return null;
   }
-  if (kind !== 'statuspage' || typeof pageUrl !== 'string' || !isHttps(pageUrl)) return null;
+  if (kind !== 'statuspage' || typeof pageUrl !== 'string' || httpsOrigin(pageUrl) === null)
+    return null;
 
   const watched = Array.isArray(components)
     ? components.filter((component): component is string => typeof component === 'string')
@@ -96,16 +98,4 @@ function parseService(entry: unknown): ServiceConfig | null {
     pageUrl,
     ...(watched.length > 0 ? { components: watched } : {}),
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isHttps(url: string): boolean {
-  try {
-    return new URL(url).protocol === 'https:';
-  } catch {
-    return false;
-  }
 }

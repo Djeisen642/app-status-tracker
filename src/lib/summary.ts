@@ -13,6 +13,25 @@ import type { TrayEntry } from './tray.ts';
 /** Drives the orb's colour and the hero's tint. */
 export type Tone = 'good' | 'warn' | 'bad' | 'idle';
 
+/**
+ * How loudly a level is drawn: red for an outage, amber for degraded or
+ * maintenance, grey for blind. The hero and the popup both read it.
+ */
+export function toneOf(level: Level): Tone {
+  switch (level) {
+    case 'major':
+    case 'partial':
+      return 'bad';
+    case 'degraded':
+    case 'maintenance':
+      return 'warn';
+    case 'unknown':
+      return 'idle';
+    case 'operational':
+      return 'good';
+  }
+}
+
 export interface Headline {
   readonly tone: Tone;
   readonly title: string;
@@ -64,21 +83,25 @@ export function headline(connectivity: Connectivity, services: readonly TrayEntr
     case 'major':
     case 'partial':
       return {
-        tone: 'bad',
+        tone: toneOf(worst.level),
         title: `${worst.name} is having a ${LEVEL_LABELS[worst.level]}`,
         detail: `${count}${more}`,
       };
     case 'degraded':
-      return { tone: 'warn', title: `${worst.name} is degraded`, detail: `${count}${more}` };
+      return {
+        tone: toneOf(worst.level),
+        title: `${worst.name} is degraded`,
+        detail: `${count}${more}`,
+      };
     case 'maintenance':
       return {
-        tone: 'warn',
+        tone: toneOf(worst.level),
         title: `${worst.name} is under maintenance`,
         detail: `${count}${more}`,
       };
     case 'unknown':
       return {
-        tone: 'idle',
+        tone: toneOf(worst.level),
         title: `Can’t read ${worst.name}’s status`,
         detail: `${count}${more}`,
       };

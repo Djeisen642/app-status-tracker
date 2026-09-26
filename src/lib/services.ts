@@ -7,9 +7,9 @@
  */
 
 import type { Alert } from './alerts.ts';
+import type { Connectivity } from './connectivity.ts';
 import { parseStatuspageSummary, type Snapshot } from './adapters/statuspage.ts';
 import { LEVEL_LABELS, type Level } from './status.ts';
-import { MINUTE } from './time.ts';
 
 export interface ServiceConfig {
   readonly id: string;
@@ -66,10 +66,10 @@ export const INITIAL_SERVICE: ServiceState = {
 };
 
 /** Status summaries are cached for about a minute; asking more often gains nothing. */
-export const POLL_INTERVAL = MINUTE;
+export const POLL_INTERVAL = 60_000;
 
 /** The longest a failing service waits between attempts. */
-export const MAX_BACKOFF = 15 * MINUTE;
+export const MAX_BACKOFF = 15 * 60_000;
 
 /** Failed fetches in a row before a service reads as unknown. Same reasoning as the connection check. */
 export const UNKNOWN_AFTER = 2;
@@ -168,4 +168,27 @@ export function serviceSubtitle(state: ServiceState, online: boolean): string | 
   const level = displayLevel(state);
   if (state.snapshot === null || level === null || level === 'operational') return null;
   return serviceDetail(state.snapshot);
+}
+
+/** What a service's row says: its state for styling, its label, its small print. */
+export interface RowView {
+  /** A `Level`, or `checking` / `hold`. Drives the row's colour through `data-state`. */
+  readonly state: Level | 'checking' | 'hold';
+  readonly label: string;
+  readonly subtitle: string | null;
+}
+
+/**
+ * A row for this service, given the connection.
+ *
+ * On hold means the connection is known to be the problem (offline, or a
+ * captive portal). While the connection is still being checked at launch, the
+ * service is simply checking too, not on hold.
+ */
+export function rowView(state: ServiceState, connectivity: Connectivity): RowView {
+  const held = connectivity === 'offline' || connectivity === 'portal';
+  const shown = held ? 'hold' : (displayLevel(state) ?? 'checking');
+  const label =
+    shown === 'hold' ? 'on hold' : shown === 'checking' ? 'checking…' : LEVEL_LABELS[shown];
+  return { state: shown, label, subtitle: serviceSubtitle(state, connectivity === 'online') };
 }

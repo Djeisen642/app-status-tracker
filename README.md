@@ -132,7 +132,8 @@ Right-click for the menu:
   panels never deliver the icon's own click)
 - **Quit**
 
-The panel closes with Esc or its × button.
+The panel closes with Esc or its × button. Only one copy of the app runs:
+launching it again just opens the panel of the one already in the tray.
 
 ## Getting started
 

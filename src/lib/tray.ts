@@ -6,8 +6,21 @@
  * tests rather than a manual look at a menu.
  */
 
-import { connectivityTrayLine, type Connectivity } from './connectivity.ts';
+import type { Connectivity } from './connectivity.ts';
 import { LEVEL_LABELS, LEVELS, type Level } from './status.ts';
+
+/** The tray line's override while the connection is the problem, else `null`. */
+function connectivityTrayLine(status: Connectivity): string | null {
+  switch (status) {
+    case 'offline':
+      return 'Offline: no internet connection';
+    case 'portal':
+      return 'Offline: Wi-Fi sign-in required';
+    case 'checking':
+    case 'online':
+      return null;
+  }
+}
 
 export interface TrayEntry {
   readonly name: string;

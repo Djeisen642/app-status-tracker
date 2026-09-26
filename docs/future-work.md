@@ -142,6 +142,10 @@ desktop webview.
   popup mode, and it is shown 34ms later so it has painted. Whether a hidden
   WebView2 paints in that window, or the panel still flashes for a frame, is
   unverified.
+- **Single instance on each platform.** `tauri-plugin-single-instance` hands
+  a second launch to the first (a named mutex on Windows, D-Bus on Linux).
+  Launch the app twice: there should be one tray icon, and the second launch
+  should open the first one's panel.
 - **Resizing between modes.** The window is moved then resized when it
   switches between the 360×440 panel and the popup. On a mixed-DPI
   multi-monitor setup the logical-to-physical conversion is the part most

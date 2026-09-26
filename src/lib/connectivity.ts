@@ -10,8 +10,6 @@
  * they mean.
  */
 
-import { SECOND } from './time.ts';
-
 /** What one probe saw, exactly as the bridge reports it. */
 export type ProbeOutcome =
   | { kind: 'response'; status: number; location: string | null; body: string }
@@ -169,23 +167,10 @@ export function observe(
  */
 export function nextCheckDelay(state: ConnectivityState): number {
   if (state.status === 'checking' || (state.status === 'online' && state.failures > 0)) {
-    return 5 * SECOND;
+    return 5_000;
   }
-  if (state.status === 'online') return 30 * SECOND;
-  return 10 * SECOND;
-}
-
-/** The tray line's override while the connection is the problem, else `null`. */
-export function connectivityTrayLine(status: Connectivity): string | null {
-  switch (status) {
-    case 'offline':
-      return 'Offline: no internet connection';
-    case 'portal':
-      return 'Offline: Wi-Fi sign-in required';
-    case 'checking':
-    case 'online':
-      return null;
-  }
+  if (state.status === 'online') return 30_000;
+  return 10_000;
 }
 
 /** How the connection reads in the panel's Internet row. */

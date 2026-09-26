@@ -99,15 +99,12 @@ async fn fetch(client: &reqwest::Client, url: reqwest::Url) -> ProbeOutcome {
 /// to see what the network does to an unencrypted request. Over https a captive
 /// portal is indistinguishable from a dead link.
 fn parse_probe_url(raw: &str) -> Result<reqwest::Url, String> {
-    let url = reqwest::Url::parse(raw).map_err(|err| format!("Not a URL: {err}"))?;
+    let url = crate::web_url::parse_web_url(raw)?;
     if url.scheme() != "http" {
         return Err(format!(
             "Only http:// URLs can be probed, not {}://",
             url.scheme()
         ));
-    }
-    if url.host_str().is_none() {
-        return Err("The URL has no host.".to_owned());
     }
     Ok(url)
 }
@@ -115,20 +112,9 @@ fn parse_probe_url(raw: &str) -> Result<reqwest::Url, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::{Read, Write};
-    use std::net::TcpListener;
 
-    /// Serve exactly one canned HTTP response on a local port; return its URL.
     fn serve_once(response: Vec<u8>) -> reqwest::Url {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0u8; 1024];
-            let _ = stream.read(&mut request);
-            let _ = stream.write_all(&response);
-        });
-        reqwest::Url::parse(&format!("http://127.0.0.1:{port}/probe")).unwrap()
+        crate::test_server::serve(vec![response], "/probe").0
     }
 
     fn probe(url: reqwest::Url) -> ProbeOutcome {
@@ -185,13 +171,7 @@ mod tests {
 
     #[test]
     fn reports_a_refused_connection_as_an_error() {
-        // Bind and drop: the port is now almost certainly closed.
-        let port = TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
-        let url = reqwest::Url::parse(&format!("http://127.0.0.1:{port}/")).unwrap();
+        let url = crate::test_server::refused_url();
         assert!(matches!(probe(url), ProbeOutcome::Error { .. }));
     }
 

@@ -16,6 +16,7 @@
 
 import { parseStatuspageSummary, readPageName } from './adapters/statuspage.ts';
 import type { FetchOutcome, ServiceConfig } from './services.ts';
+import { httpsOrigin, originOf } from './untrusted.ts';
 import { LEVEL_LABELS, type Level } from './status.ts';
 
 export type Normalized = { ok: true; origin: string } | { ok: false; error: string };
@@ -93,7 +94,7 @@ export function judgeCandidate(
 
   // Where the request actually ended up: `status.github.com` redirects to
   // `www.githubstatus.com`, and the page is the one that answered.
-  const resolved = resolvedOrigin(outcome.url) ?? origin;
+  const resolved = httpsOrigin(outcome.url) ?? origin;
 
   if (outcome.status === 404 || outcome.status === 410) {
     return { ok: false, error: unsupported(host) };
@@ -131,22 +132,4 @@ export function describeFound(verdict: Extract<Verdict, { ok: true }>): string {
 
 function unsupported(host: string): string {
   return `${host} isn’t a supported status page. Only Atlassian Statuspage pages (the kind GitHub and Cursor use) can be watched so far.`;
-}
-
-/** The origin of the URL a fetch landed on, if it is a web URL. */
-function resolvedOrigin(url: string): string | null {
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === 'https:' ? parsed.origin : null;
-  } catch {
-    return null;
-  }
-}
-
-function originOf(pageUrl: string): string | null {
-  try {
-    return new URL(pageUrl).origin;
-  } catch {
-    return null;
-  }
 }

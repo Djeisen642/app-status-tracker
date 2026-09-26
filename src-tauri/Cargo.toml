@@ -34,6 +34,14 @@ serde = { version = "1", features = ["derive"] }
 # requests go where the browser's go on a network that requires a proxy.
 reqwest = { version = "0.13", default-features = false, features = ["native-tls", "system-proxy"] }
 
+# One copy of the app, ever. A second launch (a double-click on the shortcut,
+# launch-at-login plus a manual start) would otherwise mean two tray icons,
+# every page polled twice, two popups for one outage, and two writers racing on
+# settings.json's temp file. The second copy hands off to the first and exits.
+# Desktop-only: the plugin doesn't build for mobile targets.
+[target.'cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))'.dependencies]
+tauri-plugin-single-instance = "2"
+
 [dev-dependencies]
 serde_json = "1"
 

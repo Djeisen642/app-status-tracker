@@ -70,27 +70,35 @@ something as finished or "working" unless you have run these and seen them pass.
 
 ```
 src/
-  main.ts               # PanelController: connection check loop, Internet row, popup, tray line
-  styles.css            # Opaque panel; light/dark tokens
-  lib/
-    status.ts(.test)    # Level: the normalized status model, worstLevel
+  main.ts               # The loop (connection, then due services) and the wiring. Nothing else.
+  watchlist.ts          # The watched list: settings.json, the save lock and queue, add/remove
+  ui/
+    service-list.ts     # Service rows, updated in place
+    popup.ts            # The popup: its alerts, drawing, and the window's popup mode
+    add-form.ts         # The add form, and nothing about what adding means
+  styles.css            # One cascade: tokens, then panel, services, add form, popup
+  lib/                  # Pure logic, all unit-tested; no DOM, no bridge (except tauri.ts)
+    status.ts(.test)    # Level: the normalized status model, in urgency order
     connectivity.ts(.test)  # The internet check: probes, verdicts, offline hysteresis
-    alerts.ts(.test)    # The popup: which bad states show, and when they show again
-    services.ts(.test)  # Watched services: config, due/backoff, level, alert
+    alerts.ts(.test)    # When the popup shows: groups, escalation, dismissal, suspension
+    services.ts(.test)  # Watched services: config, due/backoff, level, alert, row view
     candidate.ts(.test) # Can this site be added? Normalize the address, judge the answer
-    settings.ts(.test)  # settings.json: the watched list; repairs, never refuses
+    settings.ts(.test)  # settings.json: read (repairing), write (keeping what it can't read)
+    untrusted.ts(.test) # Guards for outside data: isRecord, originOf, httpsOrigin
     adapters/
       statuspage.ts(.test)  # /api/v2/summary.json into a Snapshot
-    time.ts             # Millisecond constants
-    tray.ts(.test)      # The tray's status line
-    summary.ts(.test)   # The panel's headline: the worst thing, in one sentence
+    tray.ts(.test)      # The tray's status line, including its "Offline:" override
+    summary.ts(.test)   # The panel's headline, and toneOf(level)
     errors.ts(.test)    # describeError() for native dialogs
     tauri.ts            # Optional native bridge; degrades gracefully in a browser
 src-tauri/
-  src/lib.rs            # Tray, the window's two modes (panel/popup), open_url
+  src/lib.rs            # The builder, the tray, single-instance. Wiring only.
+  src/window.rs         # The window's two modes (panel/popup), and where it sits
+  src/web_url.rs        # parse_web_url (the one http(s) check) and open_url
   src/probe.rs          # http_probe: one plain-HTTP GET, reported as it came back
   src/fetch.rs          # fetch_status: a status API GET, with ETag, native TLS, size cap
   src/settings.rs       # settings_load/settings_save: settings.json, written atomically
+  src/test_server.rs    # (tests only) a local HTTP server with canned responses
   src/main.rs           # Binary entry point
   tauri.conf.json       # Opaque, frameless, alwaysOnTop, skipTaskbar, hidden-until-clicked
   capabilities/         # Least-privilege permission set
@@ -114,6 +122,25 @@ docs/
 .claude/skills/
   verify-app/           # How to run and look at the app
 ```
+
+### Where code goes
+
+`main.ts` was once 747 lines holding the loop, persistence, three UI parts and
+the popup's window mode, and the review's worst bugs lived in its tangles. It
+is split by what changes together, and should stay that way:
+
+- **A rule is pure and goes in `lib/`**, with a test: what a row says
+  (`rowView`), when the popup pops (`alerts.ts`), what "supported" means
+  (`candidate.ts`). If you're writing an `if` about status in `ui/` or
+  `main.ts`, it probably belongs in `lib/`.
+- **A part of the page is a class in `ui/`** that owns its elements and takes
+  callbacks. It doesn't know about `settings.json` or the network.
+- **`WatchList` is the only writer of `settings.json`.** Every change goes
+  through its queue.
+- **`main.ts` is the loop and the wiring.** When it grows past a few hundred
+  lines, something above has leaked back in.
+- **One copy of each check on untrusted input:** `untrusted.ts` in TypeScript,
+  `web_url.rs` in Rust. A second copy is how they drift.
 
 ### Key design decisions (don't regress these)
 
@@ -241,6 +268,11 @@ docs/
 - **Top-right, because the other corners are taken.** Top-left is task-tracker's
   check-in card; bottom-right is noticeable-calendar-alert. Two utilities in one
   corner means ignoring both.
+- **One copy of the app, ever (`tauri-plugin-single-instance`).** A second
+  launch hands off to the first, which shows its panel, and exits. Without it
+  two copies meant two tray icons, every page polled twice, two popups per
+  outage, and two writers on `settings.json`'s temp file. It is registered
+  first, per the plugin's docs. Desktop-only (`cfg(desktop)`).
 - **Showing the panel never requests attention.** Every way to open it is a
   click the user just made. Nothing in the app requests attention.
 - **The panel does not hide on blur (yet).** Clicking the tray icon blurs the

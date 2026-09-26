@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { headline } from './summary.ts';
+import { headline, toneOf } from './summary.ts';
 
 describe('headline', () => {
   it('says everything is fine in as many words', () => {
@@ -91,5 +91,16 @@ describe('headline', () => {
     expect(headline('online', [{ name: 'GitHub', level: 'operational' }]).detail).toBe(
       '1 service watched',
     );
+  });
+});
+
+describe('toneOf', () => {
+  it('is red for outages, amber for degraded and maintenance, grey for blind', () => {
+    expect(toneOf('major')).toBe('bad');
+    expect(toneOf('partial')).toBe('bad');
+    expect(toneOf('degraded')).toBe('warn');
+    expect(toneOf('maintenance')).toBe('warn');
+    expect(toneOf('unknown')).toBe('idle');
+    expect(toneOf('operational')).toBe('good');
   });
 });

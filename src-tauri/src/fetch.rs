@@ -122,42 +122,17 @@ async fn fetch(client: &reqwest::Client, url: reqwest::Url, etag: Option<&str>) 
     }
 }
 
-/// Only http(s) URLs with a host are fetched.
+/// Only web URLs are fetched: http(s), with a host.
 fn parse_status_url(raw: &str) -> Result<reqwest::Url, String> {
-    let url = reqwest::Url::parse(raw).map_err(|err| format!("Not a URL: {err}"))?;
-    match url.scheme() {
-        "http" | "https" if url.host_str().is_some() => Ok(url),
-        "http" | "https" => Err("The URL has no host.".to_owned()),
-        other => Err(format!(
-            "Only http(s) status pages can be fetched, not {other}://"
-        )),
-    }
+    crate::web_url::parse_web_url(raw)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::{Read, Write};
-    use std::net::TcpListener;
-    use std::sync::mpsc;
 
-    /// Serve one canned response per entry, in order, on a local port. The
-    /// requests received are sent back on the channel for inspection.
-    fn serve(responses: Vec<Vec<u8>>) -> (reqwest::Url, mpsc::Receiver<String>) {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let (tx, rx) = mpsc::channel();
-        std::thread::spawn(move || {
-            for response in responses {
-                let (mut stream, _) = listener.accept().unwrap();
-                let mut request = [0u8; 4096];
-                let read = stream.read(&mut request).unwrap_or(0);
-                let _ = tx.send(String::from_utf8_lossy(&request[..read]).into_owned());
-                let _ = stream.write_all(&response);
-            }
-        });
-        let url = reqwest::Url::parse(&format!("http://127.0.0.1:{port}/api/v2/summary.json"));
-        (url.unwrap(), rx)
+    fn serve(responses: Vec<Vec<u8>>) -> (reqwest::Url, std::sync::mpsc::Receiver<String>) {
+        crate::test_server::serve(responses, "/api/v2/summary.json")
     }
 
     fn get(url: reqwest::Url, etag: Option<&str>) -> FetchOutcome {
@@ -229,12 +204,7 @@ mod tests {
 
     #[test]
     fn reports_a_refused_connection_as_an_error() {
-        let port = TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
-        let url = reqwest::Url::parse(&format!("http://127.0.0.1:{port}/")).unwrap();
+        let url = crate::test_server::refused_url();
         assert!(matches!(get(url, None), FetchOutcome::Error { .. }));
     }
 

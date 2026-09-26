@@ -13,6 +13,7 @@ import {
   MAX_BACKOFF,
   POLL_INTERVAL,
   serviceAlert,
+  rowView,
   serviceSubtitle,
   type FetchOutcome,
   type ServiceConfig,
@@ -221,5 +222,37 @@ describe('serviceSubtitle', () => {
 
   it('stays quiet while offline, where the Internet row already explains it', () => {
     expect(serviceSubtitle(run([failed, failed]), false)).toBeNull();
+  });
+});
+
+describe('rowView', () => {
+  const green = run([ok(GITHUB_OPERATIONAL)]);
+
+  it('shows the level while online', () => {
+    expect(rowView(green, 'online')).toEqual({
+      state: 'operational',
+      label: 'operational',
+      subtitle: null,
+    });
+  });
+
+  it('is on hold while offline or behind a portal', () => {
+    expect(rowView(green, 'offline')).toMatchObject({ state: 'hold', label: 'on hold' });
+    expect(rowView(green, 'portal')).toMatchObject({ state: 'hold', label: 'on hold' });
+  });
+
+  it('is checking, not on hold, while the connection is still being checked', () => {
+    expect(rowView(INITIAL_SERVICE, 'checking')).toMatchObject({
+      state: 'checking',
+      label: 'checking…',
+    });
+  });
+
+  it('says what is affected under a service in trouble', () => {
+    expect(rowView(run([ok(githubWith('major_outage'))]), 'online')).toEqual({
+      state: 'major',
+      label: 'major outage',
+      subtitle: 'Actions',
+    });
   });
 });
