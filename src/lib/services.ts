@@ -69,7 +69,7 @@ export const INITIAL_SERVICE: ServiceState = {
 /** Status summaries are cached for about a minute; asking more often gains nothing. */
 export const POLL_INTERVAL = 60_000;
 
-/** The longest a failing service waits between attempts. */
+/** The longest a failing service waits between attempts, before jitter. */
 export const MAX_BACKOFF = 15 * 60_000;
 
 /** Room added on top of every scheduled poll, so many watched pages (and many
