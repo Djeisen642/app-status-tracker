@@ -1,6 +1,6 @@
 [package]
 name = "app-status-tracker"
-version = "0.4.0"
+version = "0.5.0"
 description = "Tray utility that watches vendor status pages"
 authors = ["Jason Suttles"]
 edition = "2021"
