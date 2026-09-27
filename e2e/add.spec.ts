@@ -8,7 +8,14 @@
 
 import { expect, test, type Page } from '@playwright/test';
 
-import { CURSOR_PAGE, GITHUB_PAGE, readSavedSettings, setStatusApi, startApp } from './harness.ts';
+import {
+  advanceToNextCheck,
+  CURSOR_PAGE,
+  GITHUB_PAGE,
+  readSavedSettings,
+  setStatusApi,
+  startApp,
+} from './harness.ts';
 
 const GITHUB_ONLY = {
   services: [
@@ -148,12 +155,19 @@ test('a service removed while its fetch is out stays removed', async ({ page }) 
     await route.fulfill({ status: 503, headers: { 'Access-Control-Allow-Origin': '*' } });
   });
 
-  await page.clock.runFor(60_000);
+  // Two hops, not one `runFor(60_000)`: a jump spanning both the 30s
+  // connectivity-only round and the 60s round due for services fires their
+  // real fetches back to back, and the connectivity probes' own abort timers
+  // (real time, not the fake clock) can then fire before Playwright's routed
+  // replies land, misreading a fast reply as two dropped rounds and taking
+  // the app offline. `advanceToNextCheck` settles the first round for real
+  // before the second is due, so only Cursor's held fetch is left in flight.
+  await advanceToNextCheck(page, 30);
+  await page.clock.runFor(30_000);
   await page.getByRole('button', { name: 'Stop watching Cursor' }).click();
   release();
 
   await expect(page.locator('#internet')).toHaveAttribute('title', /Last checked/);
-  await page.clock.runFor(30_000);
   await expect(page.locator('[data-service="cursor"]')).toHaveCount(0);
   await expect(page.locator('#popup')).toBeHidden();
 });
