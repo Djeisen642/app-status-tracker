@@ -265,9 +265,22 @@ is split by what changes together, and should stay that way:
   feature, fails silently with only one, and rules out the Mac App Store. A list
   of statuses doesn't need to float. Don't add transparency back without both
   halves and a reason.
-- **Top-right, because the other corners are taken.** Top-left is task-tracker's
-  check-in card; bottom-right is noticeable-calendar-alert. Two utilities in one
-  corner means ignoring both.
+- **The panel opens next to the tray icon that was clicked, not a fixed
+  corner.** `TrayAnchor` (`window.rs`) remembers the tray icon's rect from the
+  last tray event; `show_panel` anchors above it on a bottom taskbar (Windows,
+  most Linux panels) or below it on a top one (macOS menu bar), clamped to the
+  monitor that icon is actually on. That is the native flyout convention
+  (Windows' own volume/network/action-center panels all do this), and it is
+  what a tray click should do: open where you clicked, not somewhere else on
+  the screen. Falls back to the old fixed top-right of the largest display
+  only when no tray event has fired yet (a relaunch handed off before any
+  hover, or a Linux panel that never delivers one).
+- **The popup stays top-right, because the other corners are taken.**
+  Top-left is task-tracker's check-in card; bottom-right is
+  noticeable-calendar-alert. Two utilities in one corner means ignoring both.
+  Unlike the panel, the popup arrives unbidden from a timer with no click to
+  anchor to, so a fixed corner is the right call for it; don't anchor it to
+  the tray icon too.
 - **One copy of the app, ever (`tauri-plugin-single-instance`).** A second
   launch hands off to the first, which shows its panel, and exits. Without it
   two copies meant two tray icons, every page polled twice, two popups per

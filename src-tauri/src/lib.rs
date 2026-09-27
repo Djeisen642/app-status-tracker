@@ -19,7 +19,7 @@ use tauri::{
     Manager,
 };
 
-use window::{WindowMode, PANEL, PANEL_SIZE};
+use window::{TrayAnchor, WindowMode, PANEL, PANEL_SIZE};
 
 /// Holds the disabled status line at the top of the tray menu so the frontend
 /// can keep it current.
@@ -63,6 +63,20 @@ fn set_tray_tone(tone: TrayTone, tray: tauri::State<'_, TrayHandle>) -> Result<(
     tray.0.set_icon(Some(icon)).map_err(|err| err.to_string())
 }
 
+/// Every `TrayIconEvent` variant carries the icon's current rect except
+/// `TrayIconEvent` itself being `#[non_exhaustive]`, so this is the one place
+/// that has to list them all.
+fn tray_icon_rect(event: &TrayIconEvent) -> Option<tauri::Rect> {
+    match event {
+        TrayIconEvent::Click { rect, .. }
+        | TrayIconEvent::DoubleClick { rect, .. }
+        | TrayIconEvent::Enter { rect, .. }
+        | TrayIconEvent::Move { rect, .. }
+        | TrayIconEvent::Leave { rect, .. } => Some(*rect),
+        _ => None,
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
@@ -93,6 +107,7 @@ pub fn run() {
             app.manage(probe::ProbeClient::new()?);
             app.manage(fetch::FetchClient::new()?);
             app.manage(WindowMode::new());
+            app.manage(TrayAnchor::new());
 
             // On macOS this is a menu-bar-only utility: keep it out of the Dock
             // and the app switcher by running as an Accessory app.
@@ -131,6 +146,12 @@ pub fn run() {
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
+                    // Refreshed on every event, not just the click that opens
+                    // the panel: the icon can move (a taskbar resize, a
+                    // display change) between hovers.
+                    if let Some(rect) = tray_icon_rect(&event) {
+                        tray.app_handle().state::<TrayAnchor>().set(rect);
+                    }
                     if let TrayIconEvent::Click {
                         button: MouseButton::Left,
                         button_state: MouseButtonState::Up,
@@ -152,10 +173,9 @@ pub fn run() {
             let tray = tray.build(app)?;
             app.manage(TrayHandle(tray));
 
-            // Declared hidden in tauri.conf.json. Top-right, because top-left
-            // belongs to task-tracker's check-in card and bottom-right to
-            // noticeable-calendar-alert: two utilities in one corner means
-            // ignoring both.
+            // Declared hidden in tauri.conf.json. Parked top-right for now:
+            // no tray event has fired yet to say where the icon actually is,
+            // and `show_panel` repositions it next to the icon on every open.
             if let Some(window) = app.get_webview_window(PANEL) {
                 window::place_top_right(&window, PANEL_SIZE);
             }
