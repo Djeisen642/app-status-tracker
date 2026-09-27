@@ -19,7 +19,7 @@ import {
 import { describeError } from '../lib/errors.ts';
 import { toneOf } from '../lib/summary.ts';
 import { hidePanel, preparePopup, presentPanel, revealPopup, showError } from '../lib/tauri.ts';
-import { closeIcon } from './icons.ts';
+import { closeIcon, forwardIcon } from './icons.ts';
 
 export class Popup {
   private state: PopupState = EMPTY_POPUP;
@@ -149,12 +149,9 @@ export class Popup {
       link.type = 'button';
       link.className = 'alert-link';
       link.textContent = label;
-      // Decoration stays out of the accessible name: an aria-hidden span, not
-      // CSS generated content, which a screen reader would read as "right arrow".
-      const arrow = document.createElement('span');
-      arrow.setAttribute('aria-hidden', 'true');
-      arrow.textContent = '→';
-      link.append(arrow);
+      // Decoration stays out of the accessible name: an aria-hidden SVG, not CSS
+      // generated content (read aloud as "right arrow") or a Unicode glyph.
+      link.append(forwardIcon());
       link.addEventListener('click', (event) => {
         event.stopPropagation();
         this.openLink(url);
