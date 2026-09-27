@@ -16,6 +16,7 @@ function icon(pathData: string): SVGElement {
   svg.setAttribute('stroke', 'currentColor');
   svg.setAttribute('stroke-width', '2');
   svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
   svg.setAttribute('aria-hidden', 'true');
   svg.setAttribute('focusable', 'false');
   const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
@@ -27,4 +28,9 @@ function icon(pathData: string): SVGElement {
 /** The × used to dismiss a popup alert or remove a watched service. */
 export function closeIcon(): SVGElement {
   return icon('M6 6l12 12M18 6L6 18');
+}
+
+/** The chevron after a link that leaves the app (the popup's status-page link). */
+export function forwardIcon(): SVGElement {
+  return icon('m9 6 6 6-6 6');
 }

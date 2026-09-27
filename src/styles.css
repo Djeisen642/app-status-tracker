@@ -4,8 +4,9 @@
  * The window is opaque on purpose: a transparent one needs macOS private API
  * and fails silently without it (see src-tauri/Cargo.toml). So everything
  * modern here happens inside the rectangle: a hero that answers "is anything
- * down?" before a row is read, tinted and lit by the overall state; tiles with
- * glowing dots and level pills; and a popup with an accent edge.
+ * down?" before a row is read, marked with the brand's ring-and-dot in the
+ * overall state's colour; rows with ringed dots and level pills; and a popup
+ * with an accent edge. Flat fills throughout: no glows, no glossy gradients.
  *
  * Motion is GPU-only (transform/opacity) and respects prefers-reduced-motion.
  * State colours are always paired with words, never the only signal.
@@ -15,10 +16,11 @@
   color-scheme: light dark;
 
   /*
-   * Apple's own system colours (light), so this reads as native rather than
-   * "a website with rounded corners": systemGray6/5 for the grouped
-   * background and its raised cards, the label/secondaryLabel/separator
-   * opacities, and systemBlue/Green/Orange/Red for accent and tone.
+   * Apple's system greys and state colours (light) so the chrome still reads
+   * native: systemGray6/5 for the grouped background and its raised cards,
+   * the label/secondaryLabel/separator opacities, systemGreen/Orange/Red for
+   * tone. The accent is not systemBlue: it is the brand mark's ring blue
+   * (src-tauri/icons), darkened for text contrast, shared with task-tracker.
    */
   --bg: #f2f2f7;
   --surface: #ffffff;
@@ -27,7 +29,7 @@
   --ink-dim: rgb(60 60 67 / 60%);
   --ink-faint: rgb(60 60 67 / 35%);
   --line: rgb(60 60 67 / 16%);
-  --accent: #007aff;
+  --accent: #3d64d8;
   --accent-ink: #ffffff;
 
   --good: #34c759;
@@ -35,7 +37,7 @@
   --bad: #ff3b30;
   --idle: #8e8e93;
 
-  --radius: 14px;
+  --radius: 18px;
   --shadow: 0 1px 3px rgb(0 0 0 / 4%), 0 8px 24px rgb(0 0 0 / 6%);
 
   font-family:
@@ -57,7 +59,7 @@
     --ink-dim: rgb(235 235 245 / 60%);
     --ink-faint: rgb(235 235 245 / 35%);
     --line: rgb(255 255 255 / 9%);
-    --accent: #0a84ff;
+    --accent: #5a82f5;
     --accent-ink: #ffffff;
 
     --good: #30d158;
@@ -288,37 +290,36 @@ button {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
   margin: 2px 10px 0;
-  padding: 16px;
-  border: 1px solid color-mix(in srgb, var(--tone) 22%, var(--line));
+  padding: 20px;
+  border: 1px solid var(--line);
   border-radius: var(--radius);
-  background:
-    radial-gradient(
-      120% 140% at 0% 0%,
-      color-mix(in srgb, var(--tone) 16%, transparent),
-      transparent 60%
-    ),
-    var(--surface);
+  background: var(--surface);
   box-shadow: var(--shadow);
 }
 
-/* The orb: the state's colour, lit from the upper left. */
+/* Only trouble tints the card; healthy stays plain (see CLAUDE.md). Flat, not a radial wash. */
+.hero[data-tone='warn'],
+.hero[data-tone='bad'] {
+  border-color: color-mix(in srgb, var(--tone) 30%, var(--line));
+  background: color-mix(in srgb, var(--tone) 7%, var(--surface));
+}
+
+/*
+ * The orb is the brand mark (a ring around a dot) recoloured by state, the
+ * way the tray icon's variants are. Flat on purpose: no gloss, no halo.
+ */
 .orb {
   position: relative;
   flex: none;
-  width: 36px;
-  height: 36px;
+  box-sizing: border-box;
+  width: 40px;
+  height: 40px;
+  padding: 5px;
+  border: 5px solid color-mix(in srgb, var(--tone) 35%, transparent);
   border-radius: 50%;
-  background: radial-gradient(
-    circle at 35% 30%,
-    color-mix(in srgb, var(--tone) 35%, white),
-    var(--tone) 55%,
-    color-mix(in srgb, var(--tone) 70%, black)
-  );
-  box-shadow:
-    0 0 0 5px color-mix(in srgb, var(--tone) 14%, transparent),
-    0 0 22px color-mix(in srgb, var(--tone) 45%, transparent);
+  background: var(--tone) content-box;
 }
 
 /*
@@ -328,7 +329,7 @@ button {
 .orb::after {
   content: '';
   position: absolute;
-  inset: 0;
+  inset: -5px;
   border-radius: 50%;
   border: 2px solid var(--tone);
   opacity: 0;
@@ -360,16 +361,16 @@ button {
   font-family:
     -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI Variable Display', 'Segoe UI',
     system-ui, sans-serif;
-  font-size: 17px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
-  line-height: 1.25;
+  font-size: 21px;
+  font-weight: 680;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
 }
 
 .hero-detail {
-  margin: 3px 0 0;
+  margin: 4px 0 0;
   color: var(--ink-dim);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .hero-detail:empty {
@@ -430,10 +431,12 @@ button {
  * surface, rows separated by a hairline, no per-row border or shadow.
  */
 .service-list {
-  flex: 1;
+  flex: 0 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   margin: 0 10px 10px;
+  padding: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
@@ -458,8 +461,8 @@ button {
 
 .service-row {
   width: 100%;
-  min-height: 46px;
-  padding: 9px 14px;
+  min-height: 48px;
+  padding: 10px 16px;
   border: 0;
   background: transparent;
   text-align: left;
@@ -573,8 +576,8 @@ button {
 /* --- Add a status page ---------------------------------------------------- */
 
 .panel-foot {
+  margin-top: auto;
   padding: 10px;
-  border-top: 1px solid var(--line);
 }
 
 .settings-problem {
@@ -738,13 +741,7 @@ body[data-mode='popup'] .panel {
   align-items: flex-start;
   gap: 12px;
   padding: 13px 8px 13px 18px;
-  background:
-    radial-gradient(
-      100% 160% at 0% 0%,
-      color-mix(in srgb, var(--tone) 12%, transparent),
-      transparent 55%
-    ),
-    var(--surface);
+  background: color-mix(in srgb, var(--tone) 6%, var(--surface));
   cursor: pointer;
 }
 
@@ -805,6 +802,11 @@ body[data-mode='popup'] .panel {
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+}
+
+.alert-link .icon-glyph {
+  width: 12px;
+  height: 12px;
 }
 
 .alert-link:hover {
