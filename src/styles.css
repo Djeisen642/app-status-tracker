@@ -415,7 +415,7 @@ button {
 /* --- Services ------------------------------------------------------------- */
 
 .section-label {
-  margin: 10px 14px 6px;
+  margin: 10px 10px 6px;
   color: var(--ink-faint);
   font-size: 11px;
   font-weight: 600;
@@ -618,7 +618,7 @@ button {
 }
 
 .add-form {
-  padding: 2px 2px 0 4px;
+  padding: 0;
 }
 
 .add-label {
