@@ -16,7 +16,9 @@ import {
   serviceAlert,
   rowView,
   serviceSubtitle,
+  sortByUrgency,
   type FetchOutcome,
+  type RowView,
   type ServiceConfig,
   type ServiceState,
 } from './services.ts';
@@ -275,5 +277,37 @@ describe('rowView', () => {
       label: 'major outage',
       subtitle: 'Actions',
     });
+  });
+});
+
+describe('sortByUrgency', () => {
+  const row = (id: string, state: RowView['state']) => ({
+    id,
+    view: { state, label: '', subtitle: null },
+  });
+
+  it('brings a real outage above the services that are fine', () => {
+    const rows = [row('a', 'operational'), row('b', 'major'), row('c', 'operational')];
+    expect(sortByUrgency(rows).map((r) => r.id)).toEqual(['b', 'a', 'c']);
+  });
+
+  it('orders several problems worst first', () => {
+    const rows = [row('a', 'degraded'), row('b', 'major'), row('c', 'partial')];
+    expect(sortByUrgency(rows).map((r) => r.id)).toEqual(['b', 'c', 'a']);
+  });
+
+  it('keeps configured order among ties, including every healthy row', () => {
+    const rows = [row('a', 'operational'), row('b', 'operational'), row('c', 'operational')];
+    expect(sortByUrgency(rows).map((r) => r.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('does not let "checking" or "hold" jump the queue ahead of a real outage', () => {
+    const rows = [row('a', 'checking'), row('b', 'major'), row('c', 'hold')];
+    expect(sortByUrgency(rows).map((r) => r.id)).toEqual(['b', 'a', 'c']);
+  });
+
+  it('ranks unknown above operational but below a known outage', () => {
+    const rows = [row('a', 'major'), row('b', 'unknown'), row('c', 'operational')];
+    expect(sortByUrgency(rows).map((r) => r.id)).toEqual(['a', 'b', 'c']);
   });
 });

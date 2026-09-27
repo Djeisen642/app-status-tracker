@@ -156,6 +156,20 @@ test('offline, services are on hold and only the connection pops up', async ({ p
   await expect(githubRow(page)).toHaveAttribute('data-state', 'hold');
 });
 
+test('a service in trouble sorts above one that is fine, regardless of configured order', async ({
+  page,
+}) => {
+  // Cursor is configured second (see DEFAULT_SERVICES); with only it in
+  // trouble it should still render first.
+  await startApp(page, { cursor: 'incident' });
+  await page.locator('#popup').getByText('Cursor: degraded').click();
+
+  const rows = page.locator('[data-service]');
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toHaveAttribute('data-service', 'cursor');
+  await expect(rows.nth(1)).toHaveAttribute('data-service', 'github');
+});
+
 test('clicking a service row opens its status page', async ({ page, context }) => {
   await startApp(page);
 
