@@ -36,6 +36,7 @@ import {
   isDue,
   rowView,
   serviceAlert,
+  sortByUrgency,
   type ServiceConfig,
   type ServiceState,
 } from './lib/services.ts';
@@ -326,12 +327,14 @@ class App {
     this.serviceListElement.hidden = none;
     this.servicesLabel.hidden = none;
     this.rows.render(
-      this.services.map((service) => ({
-        id: service.id,
-        name: service.name,
-        pageUrl: service.pageUrl,
-        view: rowView(this.stateOf(service), status),
-      })),
+      sortByUrgency(
+        this.services.map((service) => ({
+          id: service.id,
+          name: service.name,
+          pageUrl: service.pageUrl,
+          view: rowView(this.stateOf(service), status),
+        })),
+      ),
     );
     void this.pushTrayLine();
     void this.pushTrayIcon(summary.tone);

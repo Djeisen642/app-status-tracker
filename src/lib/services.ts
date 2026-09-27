@@ -10,7 +10,7 @@ import type { Alert } from './alerts.ts';
 import type { Connectivity } from './connectivity.ts';
 import { parseStatuspageSummary, type Snapshot } from './adapters/statuspage.ts';
 import { withJitter } from './jitter.ts';
-import { LEVEL_LABELS, type Level } from './status.ts';
+import { LEVEL_LABELS, LEVELS, type Level } from './status.ts';
 
 export interface ServiceConfig {
   readonly id: string;
@@ -202,4 +202,30 @@ export function rowView(state: ServiceState, connectivity: Connectivity): RowVie
   const label =
     shown === 'hold' ? 'on hold' : shown === 'checking' ? 'checking…' : LEVEL_LABELS[shown];
   return { state: shown, label, subtitle: serviceSubtitle(state, connectivity === 'online') };
+}
+
+/**
+ * Where a row's state ranks for sorting, worst first. `checking` and `hold`
+ * aren't the vendor's fault (nothing has answered yet, or the connection
+ * itself is the problem), so they rank alongside `operational` rather than
+ * bubbling up next to a real outage.
+ */
+function rowRank(state: RowView['state']): number {
+  return LEVELS.indexOf(state === 'checking' || state === 'hold' ? 'operational' : state);
+}
+
+/**
+ * Rows worst first, so a service that's actually broken surfaces above the
+ * ones that are fine, without you having to scan the whole list to find it.
+ * Ties, including every healthy row, keep the order they were given in (the
+ * order services were added), so the list doesn't reshuffle when nothing
+ * changed.
+ */
+export function sortByUrgency<T extends { readonly view: Pick<RowView, 'state'> }>(
+  rows: readonly T[],
+): T[] {
+  return rows
+    .map((row, index) => ({ row, index }))
+    .sort((a, b) => rowRank(b.row.view.state) - rowRank(a.row.view.state) || a.index - b.index)
+    .map(({ row }) => row);
 }
