@@ -31,6 +31,50 @@ describe('headline', () => {
     });
   });
 
+  it('says what is wrong instead of how many services there are', () => {
+    expect(
+      headline('online', [
+        { name: 'Cursor', level: 'degraded', detail: 'Elevated errors affecting Anthropic models' },
+        { name: 'GitHub', level: 'operational' },
+        { name: 'Phaxio', level: 'operational' },
+      ]),
+    ).toEqual({
+      tone: 'warn',
+      title: 'Cursor is degraded',
+      detail: 'Elevated errors affecting Anthropic models',
+    });
+  });
+
+  it('puts the worst service’s detail first, then counts the rest', () => {
+    expect(
+      headline('online', [
+        { name: 'Cursor', level: 'degraded', detail: 'Elevated errors' },
+        { name: 'GitHub', level: 'major', detail: 'Git operations are failing' },
+      ]).detail,
+    ).toBe('Git operations are failing · 1 more with issues');
+  });
+
+  it('says why it cannot read a service, in the service’s own words', () => {
+    expect(
+      headline('online', [{ name: 'GitHub', level: 'unknown', detail: 'connection reset' }]),
+    ).toMatchObject({ title: 'Can’t read GitHub’s status', detail: 'connection reset' });
+  });
+
+  it('falls back to the count when a problem has nothing more to say', () => {
+    expect(headline('online', [{ name: 'Cursor', level: 'degraded', detail: null }]).detail).toBe(
+      '1 service watched',
+    );
+    expect(headline('online', [{ name: 'Cursor', level: 'degraded', detail: '' }]).detail).toBe(
+      '1 service watched',
+    );
+  });
+
+  it('does not let a healthy service’s detail into the all-clear', () => {
+    expect(
+      headline('online', [{ name: 'GitHub', level: 'operational', detail: 'left over' }]).detail,
+    ).toBe('1 service watched');
+  });
+
   it('is amber, not red, for degraded and for maintenance', () => {
     expect(headline('online', [{ name: 'Cursor', level: 'degraded' }])).toMatchObject({
       tone: 'warn',

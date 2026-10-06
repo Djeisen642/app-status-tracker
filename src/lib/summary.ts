@@ -38,7 +38,28 @@ export interface Headline {
   readonly detail: string;
 }
 
-export function headline(connectivity: Connectivity, services: readonly TrayEntry[]): Headline {
+/** A service as the headline sees it: the tray's entry, plus what's wrong with it. */
+export interface HeadlineEntry extends TrayEntry {
+  /** The incident, or what's affected; `null` when there is nothing to add. */
+  readonly detail?: string | null;
+}
+
+/**
+ * The headline's second line.
+ *
+ * Healthy is the quiet case, so a count is all it has to say. A problem is
+ * what the line is for: the title names the service, and this says what is
+ * happening to it, which is worth more than how many other services exist.
+ * A service with nothing to say falls back to the count.
+ */
+function detailOf(worst: HeadlineEntry, count: string, others: number): string {
+  const more = others > 0 ? `${String(others)} more with issues` : null;
+  const what = worst.detail ?? null;
+  if (what === null || what === '') return more === null ? count : `${count} · ${more}`;
+  return more === null ? what : `${what} · ${more}`;
+}
+
+export function headline(connectivity: Connectivity, services: readonly HeadlineEntry[]): Headline {
   if (connectivity === 'offline') {
     return {
       tone: 'bad',
@@ -61,7 +82,7 @@ export function headline(connectivity: Connectivity, services: readonly TrayEntr
   }
 
   const known = services.filter(
-    (service): service is TrayEntry & { level: Level } => service.level !== null,
+    (service): service is HeadlineEntry & { level: Level } => service.level !== null,
   );
   const count = countOf(services.length);
   if (known.length === 0) return { tone: 'idle', title: 'Checking…', detail: count };
@@ -77,34 +98,21 @@ export function headline(connectivity: Connectivity, services: readonly TrayEntr
       : { tone: 'idle', title: 'Checking…', detail: count };
   }
 
-  const others = problems.length - 1;
-  const more = others > 0 ? ` · ${String(others)} more with issues` : '';
+  const detail = detailOf(worst, count, problems.length - 1);
   switch (worst.level) {
     case 'major':
     case 'partial':
       return {
         tone: toneOf(worst.level),
         title: `${worst.name} is having a ${LEVEL_LABELS[worst.level]}`,
-        detail: `${count}${more}`,
+        detail,
       };
     case 'degraded':
-      return {
-        tone: toneOf(worst.level),
-        title: `${worst.name} is degraded`,
-        detail: `${count}${more}`,
-      };
+      return { tone: toneOf(worst.level), title: `${worst.name} is degraded`, detail };
     case 'maintenance':
-      return {
-        tone: toneOf(worst.level),
-        title: `${worst.name} is under maintenance`,
-        detail: `${count}${more}`,
-      };
+      return { tone: toneOf(worst.level), title: `${worst.name} is under maintenance`, detail };
     case 'unknown':
-      return {
-        tone: toneOf(worst.level),
-        title: `Can’t read ${worst.name}’s status`,
-        detail: `${count}${more}`,
-      };
+      return { tone: toneOf(worst.level), title: `Can’t read ${worst.name}’s status`, detail };
     case 'operational':
       return { tone: 'good', title: 'All systems normal', detail: count };
   }
