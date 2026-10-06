@@ -36,11 +36,12 @@ import {
   isDue,
   rowView,
   serviceAlert,
+  serviceSubtitle,
   sortByUrgency,
   type ServiceConfig,
   type ServiceState,
 } from './lib/services.ts';
-import { headline, type Tone } from './lib/summary.ts';
+import { headline, type HeadlineEntry, type Tone } from './lib/summary.ts';
 import {
   fetchStatus,
   hidePanel,
@@ -51,7 +52,7 @@ import {
   setTrayStatus,
   showError,
 } from './lib/tauri.ts';
-import { formatTrayStatus, type TrayEntry } from './lib/tray.ts';
+import { formatTrayStatus } from './lib/tray.ts';
 import { AddForm } from './ui/add-form.ts';
 import { Popup } from './ui/popup.ts';
 import { ServiceList } from './ui/service-list.ts';
@@ -340,10 +341,11 @@ class App {
     void this.pushTrayIcon(summary.tone);
   }
 
-  private trayEntries(): TrayEntry[] {
+  private trayEntries(): HeadlineEntry[] {
     return this.services.map((service) => ({
       name: service.name,
       level: displayLevel(this.stateOf(service)),
+      detail: serviceSubtitle(this.stateOf(service), true),
     }));
   }
 

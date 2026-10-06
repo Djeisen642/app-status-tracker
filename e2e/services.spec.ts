@@ -64,6 +64,10 @@ test('the Cursor row shows the incident under its name', async ({ page }) => {
   await expect(row).toHaveAttribute('data-state', 'degraded');
   await expect(page.locator('#hero')).toHaveAttribute('data-tone', 'warn');
   await expect(page.locator('#hero-title')).toHaveText('Cursor is degraded');
+  // The headline says what is happening, not how many services there are.
+  await expect(page.locator('#hero-detail')).toHaveText(
+    'Investigating service degradation — Grok Bot',
+  );
   await expect(row).toContainText('Investigating service degradation — Grok Bot');
 });
 
