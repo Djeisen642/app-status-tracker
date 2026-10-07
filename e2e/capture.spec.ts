@@ -12,7 +12,7 @@
 
 import { expect, test } from '@playwright/test';
 
-import { advanceToNextCheck, startApp } from './harness.ts';
+import { advanceToNextCheck, setCursor, startApp } from './harness.ts';
 
 const SHOTS = 'docs/screenshots';
 
@@ -39,6 +39,20 @@ for (const colorScheme of ['light', 'dark'] as const) {
     const popup = page.locator('#popup');
     await expect(popup).toContainText('Cursor: degraded');
     await popup.screenshot({ path: `${SHOTS}/popup-cursor-${colorScheme}.png` });
+  });
+
+  test(`capture: the same incident, resolved (${colorScheme})`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme, reducedMotion: 'reduce' });
+    // The real capture, then the page clearing: SYNTHETIC all-operational, see `setCursor`.
+    await startApp(page, { cursor: 'incident' });
+    await expect(page.locator('#popup')).toContainText('Cursor: degraded');
+    await setCursor(page, 'operational');
+    await advanceToNextCheck(page, 30);
+    await advanceToNextCheck(page, 30);
+
+    const popup = page.locator('#popup');
+    await expect(popup).toContainText('Cursor: resolved');
+    await popup.screenshot({ path: `${SHOTS}/popup-resolved-${colorScheme}.png` });
   });
 
   test(`capture: the GitHub outage popup (${colorScheme})`, async ({ page }) => {

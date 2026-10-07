@@ -16,6 +16,7 @@ import {
   serviceAlert,
   rowView,
   serviceSubtitle,
+  sightService,
   sortByUrgency,
   type FetchOutcome,
   type RowView,
@@ -181,6 +182,7 @@ describe('serviceAlert, against the real Cursor incident', () => {
     expect(serviceAlert(CURSOR, state)).toEqual({
       key: 'service:cursor:degraded:bfcck6qks18q',
       group: 'service:cursor',
+      subject: 'Cursor',
       level: 'degraded',
       incidents: ['bfcck6qks18q'],
       title: 'Cursor: degraded',
@@ -211,6 +213,7 @@ describe('serviceAlert (synthetic outage variants of the real capture)', () => {
     expect(alert).toEqual({
       key: 'service:github:major',
       group: 'service:github',
+      subject: 'GitHub',
       level: 'major',
       incidents: [],
       title: 'GitHub: major outage',
@@ -231,6 +234,45 @@ describe('serviceAlert (synthetic outage variants of the real capture)', () => {
   it('does not pop for maintenance, or for a page it cannot read', () => {
     expect(serviceAlert(GITHUB, run([ok(githubWith('under_maintenance'))]))).toBeNull();
     expect(serviceAlert(GITHUB, run([ok(GITHUB_OPERATIONAL), failed, failed]))).toBeNull();
+  });
+});
+
+describe('sightService', () => {
+  const group = 'service:github';
+
+  it('sees a service in trouble, with its alert', () => {
+    const state = run([ok(githubWith('major_outage'))]);
+    expect(sightService(GITHUB, state)).toEqual({
+      group,
+      kind: 'bad',
+      alert: serviceAlert(GITHUB, state),
+    });
+  });
+
+  it('sees the real all-green capture as fine', () => {
+    expect(sightService(GITHUB, run([ok(GITHUB_OPERATIONAL)]))).toEqual({ group, kind: 'fine' });
+  });
+
+  it('sees maintenance as fine: the trouble is over, even if the page is not quiet', () => {
+    expect(sightService(GITHUB, run([ok(githubWith('under_maintenance'))]))).toEqual({
+      group,
+      kind: 'fine',
+    });
+  });
+
+  it('is blind before the first answer, and never fine', () => {
+    expect(sightService(GITHUB, INITIAL_SERVICE)).toEqual({ group, kind: 'blind' });
+  });
+
+  it('keeps the last reading through one failed fetch, then goes blind', () => {
+    const outage = ok(githubWith('major_outage'));
+    expect(sightService(GITHUB, run([outage, failed])).kind).toBe('bad');
+    expect(sightService(GITHUB, run([outage, failed, failed]))).toEqual({ group, kind: 'blind' });
+  });
+
+  it('is blind, not fine, for a page that parses but says nothing it knows', () => {
+    const body = githubWith('some_future_status');
+    expect(sightService(GITHUB, run([ok(body)]))).toEqual({ group, kind: 'blind' });
   });
 });
 

@@ -19,8 +19,22 @@ import {
   startApp,
 } from './harness.ts';
 
+const GITHUB_ONLY = {
+  services: [
+    { id: 'github', name: 'GitHub', kind: 'statuspage', pageUrl: 'https://www.githubstatus.com' },
+  ],
+};
+
 function githubRow(page: Page) {
   return page.locator('[data-service="github"]');
+}
+
+/**
+ * Four 30s rounds: a service that has failed twice waits two minutes before
+ * its next fetch (the backoff doubles from the 60s poll).
+ */
+async function pastBackoff(page: Page): Promise<void> {
+  for (let round = 0; round < 4; round += 1) await advanceToNextCheck(page, 30);
 }
 
 /** Two 30s rounds: the second one is when GitHub is due again. */
@@ -80,14 +94,31 @@ test('two services in trouble share one popup', async ({ page }) => {
   await expect(page.locator('#popup')).toContainText('Cursor: degraded');
 });
 
-test('Cursor recovering closes its popup', async ({ page }) => {
+test('Cursor recovering turns its popup into a resolved card with a link', async ({
+  page,
+  context,
+}) => {
   await startApp(page, { cursor: 'incident' });
-  await expect(page.locator('#popup')).toBeVisible();
+  await expect(page.locator('#popup')).toContainText('Cursor: degraded');
 
   await setCursor(page, 'operational');
   await nextServicePoll(page);
 
-  await expect(page.locator('#popup')).toBeHidden();
+  // The same card, now saying it is over: what it was, how bad, how long it was seen.
+  const popup = page.locator('#popup');
+  await expect(popup).toBeVisible();
+  await expect(popup.locator('.alert')).toHaveCount(1);
+  await expect(popup).toContainText('Cursor: resolved');
+  await expect(popup).not.toContainText('Cursor: degraded');
+  await expect(popup).toContainText('Investigating service degradation — Grok Bot');
+  await expect(popup).toContainText(/degraded, seen for \d+ min/);
+  await expect(popup.locator('.alert')).toHaveAttribute('data-tone', 'good');
+
+  const [statusPage] = await Promise.all([
+    context.waitForEvent('page'),
+    popup.getByRole('button', { name: 'View status page' }).click(),
+  ]);
+  expect(statusPage.url()).toBe(`${CURSOR_PAGE}/`);
 });
 
 test('pops up on an outage, linking to the status page', async ({ page, context }) => {
@@ -109,15 +140,63 @@ test('pops up on an outage, linking to the status page', async ({ page, context 
   await expect(popup).toBeVisible();
 });
 
-test('the popup closes by itself when GitHub recovers', async ({ page }) => {
+test('a resolved card stays until it is dismissed, then the popup closes', async ({ page }) => {
   await startApp(page, { github: 'outage' });
-  await expect(page.locator('#popup')).toBeVisible();
+  await expect(page.locator('#popup')).toContainText('GitHub: major outage');
 
   await setGitHub(page, 'operational');
   await nextServicePoll(page);
 
-  await expect(page.locator('#popup')).toBeHidden();
+  const popup = page.locator('#popup');
+  await expect(popup).toContainText('GitHub: resolved');
+  await expect(popup).toContainText(/major outage, seen for \d+ min/);
   await expect(githubRow(page)).toHaveAttribute('data-state', 'operational');
+
+  // No timer takes it down: it is news you may have been away for.
+  await advanceToNextCheck(page, 30);
+  await advanceToNextCheck(page, 30);
+  await expect(popup).toContainText('GitHub: resolved');
+
+  await popup.getByRole('button', { name: 'Dismiss: GitHub: resolved' }).click();
+  await expect(popup).toBeHidden();
+  await expect(page.locator('body')).toHaveAttribute('data-mode', 'panel');
+});
+
+test('an outage you dismissed still gets its resolved card', async ({ page }) => {
+  await startApp(page, { github: 'outage' });
+  await page.getByRole('button', { name: 'Dismiss: GitHub: major outage' }).click();
+  await expect(page.locator('#popup')).toBeHidden();
+
+  await setGitHub(page, 'operational');
+  await nextServicePoll(page);
+
+  await expect(page.locator('#popup')).toContainText('GitHub: resolved');
+});
+
+test('clicking a resolved card opens the panel and does not bring it back', async ({ page }) => {
+  await startApp(page, { github: 'outage' });
+  await setGitHub(page, 'operational');
+  await nextServicePoll(page);
+  await page.locator('#popup').getByText('GitHub: resolved').click();
+
+  await expect(page.locator('body')).toHaveAttribute('data-mode', 'panel');
+  await expect(page.locator('#panel')).toBeVisible();
+  await advanceToNextCheck(page, 30);
+  await expect(page.locator('#popup')).toBeHidden();
+});
+
+test('a new outage after a resolved card replaces it', async ({ page }) => {
+  await startApp(page, { github: 'outage' });
+  await setGitHub(page, 'operational');
+  await nextServicePoll(page);
+  await expect(page.locator('#popup')).toContainText('GitHub: resolved');
+
+  await setGitHub(page, 'outage');
+  await nextServicePoll(page);
+
+  const popup = page.locator('#popup');
+  await expect(popup).toContainText('GitHub: major outage');
+  await expect(popup).not.toContainText('resolved');
 });
 
 test('an unreachable status page reads as unknown, and does not pop up', async ({ page }) => {
@@ -132,6 +211,70 @@ test('an unreachable status page reads as unknown, and does not pop up', async (
   await nextServicePoll(page);
   await expect(githubRow(page)).toHaveAttribute('data-state', 'unknown');
   await expect(page.locator('#popup')).toBeHidden();
+});
+
+test('a status page that goes dark during an outage is not a recovery', async ({ page }) => {
+  await startApp(page, { github: 'outage' });
+  await page.getByRole('button', { name: 'Dismiss: GitHub: major outage' }).click();
+
+  // Two failed fetches in a row: the app can no longer see GitHub at all.
+  await setGitHub(page, 'down');
+  await nextServicePoll(page);
+  await nextServicePoll(page);
+  await expect(githubRow(page)).toHaveAttribute('data-state', 'unknown');
+  await expect(page.locator('#popup')).toBeHidden();
+
+  // It answers again, with the outage still on: still no good news to give.
+  await setGitHub(page, 'outage');
+  await pastBackoff(page);
+  await expect(githubRow(page)).toHaveAttribute('data-state', 'major');
+  await expect(page.locator('#popup')).not.toContainText('resolved');
+
+  // Only a real all-clear ends it.
+  await setGitHub(page, 'operational');
+  await nextServicePoll(page);
+  await expect(page.locator('#popup')).toContainText('GitHub: resolved');
+});
+
+test('blind then better: the all-clear is announced when sight returns', async ({ page }) => {
+  await startApp(page, { github: 'outage' });
+  await setGitHub(page, 'down');
+  await nextServicePoll(page);
+  await nextServicePoll(page);
+  await expect(githubRow(page)).toHaveAttribute('data-state', 'unknown');
+
+  await setGitHub(page, 'operational');
+  await pastBackoff(page);
+
+  await expect(page.locator('#popup')).toContainText('GitHub: resolved');
+});
+
+test('a service you stop watching mid-outage is not reported as resolved', async ({ page }) => {
+  await startApp(page, { github: 'outage' });
+  await page.locator('#popup').getByText('GitHub: major outage').click();
+  await page.getByRole('button', { name: 'Stop watching GitHub' }).click();
+  await expect(githubRow(page)).toHaveCount(0);
+
+  await advanceToNextCheck(page, 30);
+  await advanceToNextCheck(page, 30);
+  await expect(page.locator('#popup')).toBeHidden();
+});
+
+test('a page added mid-outage is remembered, so its end is announced', async ({ page }) => {
+  await startApp(page, { settings: GITHUB_ONLY, cursor: 'incident' });
+  await page.getByRole('button', { name: 'Add a status page' }).click();
+  await page.getByLabel('Status page address').fill('status.cursor.com');
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(page.locator('[data-service="status.cursor.com"]')).toHaveAttribute(
+    'data-state',
+    'degraded',
+  );
+  // You were just told; no popup for the add itself.
+  await expect(page.locator('#popup')).toBeHidden();
+
+  await setCursor(page, 'operational');
+  await nextServicePoll(page);
+  await expect(page.locator('#popup')).toContainText('Cursor: resolved');
 });
 
 test('while the first connection check is still out, a service is checking, not on hold', async ({

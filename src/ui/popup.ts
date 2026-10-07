@@ -13,6 +13,7 @@ import {
   dismiss,
   EMPTY_POPUP,
   reconcile,
+  visible,
   type Alert,
   type PopupState,
 } from '../lib/alerts.ts';
@@ -33,13 +34,20 @@ export class Popup {
     private readonly openLink: (url: string) => void,
   ) {}
 
-  /** Bring the popup in line with what is wrong now: raise it, update it, or close it. */
-  async sync(active: readonly Alert[], suspended: readonly Alert[]): Promise<void> {
-    const { state, raised } = reconcile(this.state, active, suspended);
+  /**
+   * Bring the popup in line with what is wrong now: raise it, update it, or
+   * close it. `resolved` are the cards for troubles that were just seen to end.
+   */
+  async sync(
+    active: readonly Alert[],
+    suspended: readonly Alert[],
+    resolved: readonly Alert[] = [],
+  ): Promise<void> {
+    const { state, raised } = reconcile(this.state, active, suspended, resolved);
     this.state = state;
     this.draw();
 
-    if (this.state.shown.length === 0) {
+    if (visible(this.state).length === 0) {
       if (isPopupMode()) await this.close();
       return;
     }
@@ -100,7 +108,7 @@ export class Popup {
   private async dismiss(key: string): Promise<void> {
     this.state = dismiss(this.state, key);
     this.draw();
-    if (this.state.shown.length === 0) await this.close();
+    if (visible(this.state).length === 0) await this.close();
     else await this.show();
   }
 
@@ -112,10 +120,11 @@ export class Popup {
 
   /** Rebuilt only when what it says changed, so a click isn't lost to a redraw. */
   private draw(): void {
-    const drawn = JSON.stringify(this.state.shown.map((alert) => [alert.key, alert.detail]));
+    const cards = visible(this.state);
+    const drawn = JSON.stringify(cards.map((alert) => [alert.key, alert.detail]));
     if (drawn === this.drawn) return;
     this.drawn = drawn;
-    this.list.replaceChildren(...this.state.shown.map((alert) => this.card(alert)));
+    this.list.replaceChildren(...cards.map((alert) => this.card(alert)));
   }
 
   /** One alert. Everything in it came off the network: `textContent` only. */

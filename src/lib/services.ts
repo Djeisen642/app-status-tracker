@@ -8,6 +8,7 @@
 
 import type { Alert } from './alerts.ts';
 import type { Connectivity } from './connectivity.ts';
+import type { Sighting } from './episodes.ts';
 import { parseStatuspageSummary, type Snapshot } from './adapters/statuspage.ts';
 import { withJitter } from './jitter.ts';
 import { LEVEL_LABELS, LEVELS, type Level } from './status.ts';
@@ -148,13 +149,34 @@ export function serviceAlert(service: ServiceConfig, state: ServiceState): Alert
   const incidentIds = snapshot.incidents.map((incident) => incident.id).sort();
   return {
     key: ['service', service.id, level, ...incidentIds].join(':'),
-    group: `service:${service.id}`,
+    group: serviceGroup(service),
+    subject: service.name,
     level,
     incidents: incidentIds,
     title: `${service.name}: ${LEVEL_LABELS[level]}`,
     detail: serviceDetail(snapshot),
     link: { label: 'View status page', url: service.pageUrl },
   };
+}
+
+/** The alert group for one service: its alerts are compared with each other, not strangers'. */
+function serviceGroup(service: ServiceConfig): string {
+  return `service:${service.id}`;
+}
+
+/**
+ * What this service's latest reading says, for the memory of troubles.
+ *
+ * `blind` is anything short of a reading: nothing yet, or two failed fetches,
+ * or a value the adapter couldn't place. Only `fine` may end an episode, so a
+ * vendor whose status page is struggling never reads as recovered.
+ */
+export function sightService(service: ServiceConfig, state: ServiceState): Sighting {
+  const group = serviceGroup(service);
+  const level = displayLevel(state);
+  if (level === null || level === 'unknown') return { group, kind: 'blind' };
+  const alert = serviceAlert(service, state);
+  return alert === null ? { group, kind: 'fine' } : { group, kind: 'bad', alert };
 }
 
 /** The most specific thing there is to say: the incident, else what's affected. */

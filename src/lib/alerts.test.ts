@@ -7,6 +7,7 @@ import {
   EMPTY_POPUP,
   escalates,
   reconcile,
+  visible,
   type Alert,
   type PopupState,
 } from './alerts.ts';
@@ -23,6 +24,7 @@ function alert(
   return {
     key: [group, level, ...incidents].join(':'),
     group,
+    subject: group,
     level,
     incidents,
     title: group,
@@ -34,6 +36,20 @@ function alert(
 /** Run several rounds through `reconcile`, keeping only the state. */
 function rounds(...active: (readonly Alert[])[]): PopupState {
   return active.reduce<PopupState>((state, round) => reconcile(state, round).state, EMPTY_POPUP);
+}
+
+/** A resolved card for `group`, as `episodes.ts` would build one. */
+function resolvedCard(group: string, at = 1): Alert {
+  return {
+    key: `resolved:${group}:${String(at)}`,
+    group,
+    subject: group,
+    level: 'operational',
+    incidents: [],
+    title: `${group}: resolved`,
+    detail: '',
+    link: null,
+  };
 }
 
 const shownGroups = (state: PopupState) => state.shown.map((a) => a.group);
@@ -198,5 +214,61 @@ describe('acknowledge', () => {
     const seen = acknowledge(rounds([alert('a')]));
     expect(seen.shown).toEqual([]);
     expect(reconcile(seen, [alert('a')]).raised).toBe(false);
+  });
+});
+
+describe('resolved cards', () => {
+  it('come forward, even for a trouble that was dismissed', () => {
+    const closed = dismiss(rounds([alert('github')]), 'github:major');
+    const result = reconcile(closed, [], [], [resolvedCard('github')]);
+    expect(result.raised).toBe(true);
+    expect(result.state.resolved.map((card) => card.group)).toEqual(['github']);
+  });
+
+  it('replace the trouble card they are about, in the same pass', () => {
+    const result = reconcile(rounds([alert('github')]), [], [], [resolvedCard('github')]);
+    expect(result.state.shown).toEqual([]);
+    expect(visible(result.state).map((card) => card.title)).toEqual(['github: resolved']);
+  });
+
+  it('stay up, with no timer, while the rest of the checks go on', () => {
+    const state = reconcile(EMPTY_POPUP, [], [], [resolvedCard('github')]).state;
+    const later = reconcile(state, [], []);
+    expect(later.raised).toBe(false);
+    expect(later.state.resolved).toHaveLength(1);
+  });
+
+  it('give way to a newer card for the same group', () => {
+    const first = reconcile(EMPTY_POPUP, [], [], [resolvedCard('github', 1)]).state;
+    const second = reconcile(first, [], [], [resolvedCard('github', 2)]).state;
+    expect(second.resolved.map((card) => card.key)).toEqual(['resolved:github:2']);
+  });
+
+  it('go away when that group turns bad again, because they would be a lie', () => {
+    const state = reconcile(EMPTY_POPUP, [], [], [resolvedCard('github')]).state;
+    const again = reconcile(state, [alert('github')]);
+    expect(again.raised).toBe(true);
+    expect(again.state.resolved).toEqual([]);
+    expect(shownGroups(again.state)).toEqual(['github']);
+  });
+
+  it("leave other groups' cards alone", () => {
+    const state = reconcile(EMPTY_POPUP, [], [], [resolvedCard('a'), resolvedCard('b')]).state;
+    const again = reconcile(state, [alert('a')]);
+    expect(again.state.resolved.map((card) => card.group)).toEqual(['b']);
+  });
+
+  it('are closed with dismiss, and are not remembered as a trouble', () => {
+    const state = reconcile(EMPTY_POPUP, [], [], [resolvedCard('github')]).state;
+    const closed = dismiss(state, 'resolved:github:1');
+    expect(closed.resolved).toEqual([]);
+    expect(closed.dismissed).toEqual([]);
+    // So the next outage of the same service still pops.
+    expect(reconcile(closed, [alert('github')]).raised).toBe(true);
+  });
+
+  it('are read, not shown, once the panel says it all (acknowledge)', () => {
+    const state = reconcile(EMPTY_POPUP, [], [], [resolvedCard('github')]).state;
+    expect(acknowledge(state).resolved).toEqual([]);
   });
 });

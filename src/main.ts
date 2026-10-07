@@ -27,6 +27,7 @@ import {
   PROBES,
   type ConnectivityState,
 } from './lib/connectivity.ts';
+import { observeEpisodes, type Episode } from './lib/episodes.ts';
 import { describeError } from './lib/errors.ts';
 import {
   apiUrl,
@@ -37,6 +38,7 @@ import {
   rowView,
   serviceAlert,
   serviceSubtitle,
+  sightService,
   sortByUrgency,
   type ServiceConfig,
   type ServiceState,
@@ -117,6 +119,8 @@ class App {
   );
 
   private serviceStates = new Map<string, ServiceState>();
+  /** Troubles seen and not yet seen to end, so an ending can be told. */
+  private episodes: readonly Episode[] = [];
   private connectivity: ConnectivityState = INITIAL_CONNECTIVITY;
   /** Where a captive portal last redirected a probe, for the sign-in link. */
   private portalUrl: string | null = null;
@@ -194,8 +198,10 @@ class App {
       applyFetch(result.service, INITIAL_SERVICE, result.outcome, Date.now()),
     );
     this.serviceStates = states;
-    // You were just told its state; don't pop it up at you as news.
+    // You were just told its state; don't pop it up at you as news. But a
+    // page added mid-incident is remembered, so its ending is announced.
     const { active, suspended } = this.alerts();
+    this.remember();
     this.popup.acknowledgeAll(active, suspended);
 
     say(result.message, 'success');
@@ -216,8 +222,10 @@ class App {
     states.delete(id);
     this.serviceStates = states;
     this.render();
+    // Gone from the list, so its trouble is forgotten, not "resolved".
+    const resolved = this.remember();
     const { active, suspended } = this.alerts();
-    await this.popup.sync(active, suspended);
+    await this.popup.sync(active, suspended, resolved);
   }
 
   private find(id: string): ServiceConfig | undefined {
@@ -287,8 +295,9 @@ class App {
       this.lastChecked = new Date();
       this.shownError = null;
       this.render();
+      const resolved = this.remember();
       const { active, suspended } = this.alerts();
-      await this.popup.sync(active, suspended);
+      await this.popup.sync(active, suspended, resolved);
     } catch (error) {
       // A bridge failure is the app's problem, not the network's: say so,
       // rather than folding it into "offline". Once per distinct failure.
@@ -367,6 +376,18 @@ class App {
     if (internet !== null) return { active: [internet], suspended: services };
     if (this.connectivity.status !== 'online') return { active: [], suspended: services };
     return { active: services, suspended: [] };
+  }
+
+  /**
+   * Fold the services' latest readings into the memory of troubles, and return
+   * a card for each one just seen to end. Called once per reading, so a card
+   * is made once: a second call with nothing new returns none.
+   */
+  private remember(): Alert[] {
+    const sightings = this.services.map((service) => sightService(service, this.stateOf(service)));
+    const { open, resolved } = observeEpisodes(this.episodes, sightings, Date.now());
+    this.episodes = open;
+    return [...resolved];
   }
 
   private async open(url: string): Promise<void> {
