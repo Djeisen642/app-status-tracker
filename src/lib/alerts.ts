@@ -5,6 +5,8 @@
  * driven by the difference between that list and what it has already shown, so
  * it appears when something goes bad, not on every check while it stays bad.
  * A dismissed alert stays dismissed until its check recovers or gets worse.
+ * When a service's trouble ends, the popup says so once (a `resolved` card,
+ * built in `episodes.ts`) rather than just going quiet.
  */
 
 import type { Connectivity } from './connectivity.ts';
@@ -83,9 +85,19 @@ export interface PopupState {
    * flaps between partial and major doesn't pop again on every swing up.
    */
   readonly dismissed: readonly Alert[];
+  /**
+   * Good news waiting to be read: a trouble that ended. At most one per group,
+   * and never remembered once closed (it isn't trouble, so nothing to suppress).
+   */
+  readonly resolved: readonly Alert[];
 }
 
-export const EMPTY_POPUP: PopupState = { shown: [], dismissed: [] };
+export const EMPTY_POPUP: PopupState = { shown: [], dismissed: [], resolved: [] };
+
+/** Everything the popup has a card for, in the order it is drawn. */
+export function visible(state: PopupState): readonly Alert[] {
+  return [...state.shown, ...state.resolved];
+}
 
 export interface Reconciled {
   readonly state: PopupState;
@@ -105,6 +117,23 @@ export function escalates(seen: Alert, next: Alert): boolean {
   );
 }
 
+export interface ReconcileOptions {
+  /**
+   * Groups whose trouble isn't known to be over but shouldn't be on screen:
+   * the connection is down, or the page has moved into maintenance. Taken off
+   * screen, dismissal kept.
+   */
+  readonly suspended?: readonly string[];
+  /**
+   * Groups that can't be judged right now because their page can't be read:
+   * left exactly as they are, on screen or dismissed. Not being able to see
+   * is not the same as it being over.
+   */
+  readonly held?: readonly string[];
+  /** Cards for troubles that were seen to end. */
+  readonly resolved?: readonly Alert[];
+}
+
 /**
  * Fold what is wrong right now into the popup.
  *
@@ -118,20 +147,34 @@ export function escalates(seen: Alert, next: Alert): boolean {
  *   but keeps its dismissal. Treating "not checked right now" as "recovered"
  *   was the other bug the review found: a Wi-Fi blip re-popped every
  *   dismissed outage.
+ * - A *held* group (a service whose page can't be read) keeps whatever it
+ *   had. A page buckling in a big outage must not make the card vanish, which
+ *   reads as all clear, or forget a dismissal, which re-pops the same outage
+ *   when the page returns.
+ * - A *resolved* card arrives for a group whose trouble was seen to end. It
+ *   comes forward like any news, replaces an older card for the same group,
+ *   and goes away if that group turns bad again (it would be a lie by then).
+ *   Whether a group really ended is decided by the caller from a fresh good
+ *   reading, never from the group merely being absent from `active`.
  */
 export function reconcile(
   state: PopupState,
   active: readonly Alert[],
-  suspended: readonly Alert[] = [],
+  options: ReconcileOptions = {},
 ): Reconciled {
-  const suspendedGroups = new Set(suspended.map((alert) => alert.group));
+  const suspendedGroups = new Set(options.suspended ?? []);
+  const heldGroups = new Set(options.held ?? []);
+  const resolved = options.resolved ?? [];
 
   const shown: Alert[] = [];
   let raised = false;
   // Keep what was already on screen in its place, updated.
   for (const previous of state.shown) {
     const next = active.find((alert) => alert.group === previous.group);
-    if (next === undefined) continue;
+    if (next === undefined) {
+      if (heldGroups.has(previous.group)) shown.push(previous);
+      continue;
+    }
     if (escalates(previous, next)) raised = true;
     shown.push(next);
   }
@@ -140,7 +183,9 @@ export function reconcile(
   for (const previous of state.dismissed) {
     const next = active.find((alert) => alert.group === previous.group);
     if (next === undefined) {
-      if (suspendedGroups.has(previous.group)) dismissed.push(previous);
+      if (suspendedGroups.has(previous.group) || heldGroups.has(previous.group)) {
+        dismissed.push(previous);
+      }
       continue;
     }
     if (escalates(previous, next)) {
@@ -158,28 +203,48 @@ export function reconcile(
     raised = true;
   }
 
-  return { state: { shown, dismissed }, raised };
+  const activeGroups = new Set(active.map((alert) => alert.group));
+  const arrived = resolved.filter((card) => !activeGroups.has(card.group));
+  const arrivedGroups = new Set(arrived.map((card) => card.group));
+  const kept = state.resolved.filter(
+    (card) => !activeGroups.has(card.group) && !arrivedGroups.has(card.group),
+  );
+
+  return {
+    state: { shown, dismissed, resolved: [...kept, ...arrived] },
+    raised: raised || arrived.length > 0,
+  };
 }
 
-/** Close one alert. It won't come back until its check recovers or gets worse. */
+/**
+ * Close one card. A trouble won't come back until its check recovers or gets
+ * worse; a resolved card is just closed.
+ */
 export function dismiss(state: PopupState, key: string): PopupState {
   const closing = state.shown.find((alert) => alert.key === key);
-  if (closing === undefined) return state;
+  if (closing === undefined) {
+    return state.resolved.some((card) => card.key === key)
+      ? { ...state, resolved: state.resolved.filter((card) => card.key !== key) }
+      : state;
+  }
   return {
+    ...state,
     shown: state.shown.filter((alert) => alert !== closing),
     dismissed: [...state.dismissed.filter((alert) => alert.group !== closing.group), closing],
   };
 }
 
 /**
- * Mark alerts as seen without showing them: for when the panel is already
- * open and says the same thing, so a popup would only repeat it.
+ * Mark everything as seen without showing it: for when the panel is already
+ * open and says the same thing, so a popup would only repeat it. Resolved
+ * cards are simply read.
  */
 export function acknowledge(state: PopupState): PopupState {
   const groups = new Set(state.shown.map((alert) => alert.group));
   return {
     shown: [],
     dismissed: [...state.dismissed.filter((alert) => !groups.has(alert.group)), ...state.shown],
+    resolved: [],
   };
 }
 

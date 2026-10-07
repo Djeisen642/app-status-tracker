@@ -14,7 +14,7 @@
  * check goes bad, with a link to the page that explains it.
  */
 
-import { connectivityAlert, type Alert } from './lib/alerts.ts';
+import { connectivityAlert, type Alert, type ReconcileOptions } from './lib/alerts.ts';
 import { formatBuildInfo } from './lib/build-info.ts';
 import {
   combineVerdicts,
@@ -27,6 +27,13 @@ import {
   PROBES,
   type ConnectivityState,
 } from './lib/connectivity.ts';
+import {
+  groupOf,
+  observeEpisodes,
+  resolvedAlert,
+  type Episode,
+  type Sighting,
+} from './lib/episodes.ts';
 import { describeError } from './lib/errors.ts';
 import {
   apiUrl,
@@ -35,8 +42,8 @@ import {
   INITIAL_SERVICE,
   isDue,
   rowView,
-  serviceAlert,
   serviceSubtitle,
+  sightService,
   sortByUrgency,
   type ServiceConfig,
   type ServiceState,
@@ -117,6 +124,10 @@ class App {
   );
 
   private serviceStates = new Map<string, ServiceState>();
+  /** Troubles seen and not yet seen to end, so an ending can be told. */
+  private episodes: readonly Episode[] = [];
+  /** Resolved cards made but not yet handed to the popup, so none is lost between syncs. */
+  private resolvedCards: Alert[] = [];
   private connectivity: ConnectivityState = INITIAL_CONNECTIVITY;
   /** Where a captive portal last redirected a probe, for the sign-in link. */
   private portalUrl: string | null = null;
@@ -194,9 +205,12 @@ class App {
       applyFetch(result.service, INITIAL_SERVICE, result.outcome, Date.now()),
     );
     this.serviceStates = states;
-    // You were just told its state; don't pop it up at you as news.
-    const { active, suspended } = this.alerts();
-    this.popup.acknowledgeAll(active, suspended);
+    // You were just told its state; don't pop it up at you as news. But a
+    // page added mid-incident is remembered, so its ending is announced.
+    const sightings = this.sightings();
+    this.remember(sightings);
+    const { active, options } = this.alerts(sightings);
+    this.popup.acknowledgeAll(active, options);
 
     say(result.message, 'success');
     this.render();
@@ -216,8 +230,8 @@ class App {
     states.delete(id);
     this.serviceStates = states;
     this.render();
-    const { active, suspended } = this.alerts();
-    await this.popup.sync(active, suspended);
+    // Gone from the list, so its trouble is forgotten, not "resolved".
+    await this.syncPopup();
   }
 
   private find(id: string): ServiceConfig | undefined {
@@ -287,8 +301,7 @@ class App {
       this.lastChecked = new Date();
       this.shownError = null;
       this.render();
-      const { active, suspended } = this.alerts();
-      await this.popup.sync(active, suspended);
+      await this.syncPopup();
     } catch (error) {
       // A bridge failure is the app's problem, not the network's: say so,
       // rather than folding it into "offline". Once per distinct failure.
@@ -349,24 +362,58 @@ class App {
     }));
   }
 
+  /** Every service's latest reading, once per round: the alerts and the memory both read it. */
+  private sightings(): Sighting[] {
+    return this.services.map((service) => sightService(service, this.stateOf(service)));
+  }
+
   /**
-   * Everything wrong right now, as alerts, split in two.
+   * Everything wrong right now, as alerts, and what the popup can't judge.
    *
    * While the connection is down its alert is the only *active* one: every
    * service would otherwise read as broken for a reason that has nothing to
-   * do with the vendor. The services' last known alerts are *suspended*
-   * rather than dropped, so a dismissal survives the blip instead of the same
-   * outage popping again when the Wi-Fi comes back.
+   * do with the vendor. The services' troubles are *suspended* rather than
+   * dropped, so a dismissal survives the blip instead of the same outage
+   * popping again when the Wi-Fi comes back.
+   *
+   * Online, a service in maintenance is suspended the same way (the outage
+   * isn't over, and isn't to be shown), and one whose page can't be read is
+   * *held*: its card stays as it was, because not seeing is not it being over.
    */
-  private alerts(): { active: Alert[]; suspended: Alert[] } {
+  private alerts(sightings: readonly Sighting[]): { active: Alert[]; options: ReconcileOptions } {
     const probe = PROBES[0]?.url ?? '';
     const internet = connectivityAlert(this.connectivity.status, this.portalUrl, probe);
-    const services = this.services
-      .map((service) => serviceAlert(service, this.stateOf(service)))
-      .filter((alert): alert is Alert => alert !== null);
-    if (internet !== null) return { active: [internet], suspended: services };
-    if (this.connectivity.status !== 'online') return { active: [], suspended: services };
-    return { active: services, suspended: [] };
+    const groupsOf = (kinds: readonly Sighting['kind'][]) =>
+      sightings.filter((sighting) => kinds.includes(sighting.kind)).map(groupOf);
+
+    if (internet !== null || this.connectivity.status !== 'online') {
+      return {
+        active: internet === null ? [] : [internet],
+        options: { suspended: groupsOf(['bad', 'blind', 'maintenance']) },
+      };
+    }
+    return {
+      active: sightings.flatMap((sighting) => (sighting.kind === 'bad' ? [sighting.alert] : [])),
+      options: { suspended: groupsOf(['maintenance']), held: groupsOf(['blind']) },
+    };
+  }
+
+  /**
+   * Fold the readings into the memory of troubles. The cards for troubles
+   * that ended wait in `resolvedCards` until the next `syncPopup`, so a
+   * caller that only wants the memory updated can't lose one.
+   */
+  private remember(sightings: readonly Sighting[]): void {
+    const { open, resolved } = observeEpisodes(this.episodes, sightings, Date.now());
+    this.episodes = open;
+    this.resolvedCards.push(...resolved.map(resolvedAlert));
+  }
+
+  private async syncPopup(): Promise<void> {
+    const sightings = this.sightings();
+    this.remember(sightings);
+    const { active, options } = this.alerts(sightings);
+    await this.popup.sync(active, { ...options, resolved: this.resolvedCards.splice(0) });
   }
 
   private async open(url: string): Promise<void> {

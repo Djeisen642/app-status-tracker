@@ -80,7 +80,8 @@ src/
   lib/                  # Pure logic, all unit-tested; no DOM, no bridge (except tauri.ts)
     status.ts(.test)    # Level: the normalized status model, in urgency order
     connectivity.ts(.test)  # The internet check: probes, verdicts, offline hysteresis
-    alerts.ts(.test)    # When the popup shows: groups, escalation, dismissal, suspension
+    alerts.ts(.test)    # When the popup shows: groups, escalation, dismissal, suspension, resolved cards
+    episodes.ts(.test)  # The memory of troubles: opened by a bad reading, closed only by a good one
     services.ts(.test)  # Watched services: config, due/backoff, level, alert, row view
     candidate.ts(.test) # Can this site be added? Normalize the address, judge the answer
     settings.ts(.test)  # settings.json: read (repairing), write (keeping what it can't read)
@@ -216,8 +217,14 @@ is split by what changes together, and should stay that way:
     news. Getting better, or one of two incidents resolving, is not. The first
     version keyed alerts on level and incident list, so an outage _easing_
     re-popped a dismissed popup.
-  - **It closes itself on recovery.** A popup saying GitHub is down after
-    GitHub came back is a lie you have to clean up.
+  - **It closes itself on recovery, and says so.** A popup saying GitHub is
+    down after GitHub came back is a lie you have to clean up, so the outage
+    card gives way to a "resolved" card: what the incident was, the worst
+    level, how long it was seen. It stays until dismissed or clicked (no timer,
+    for the reason below), is replaced if the service goes bad again, and is
+    shown even for an outage you dismissed. The connection's own popup just
+    closes when it comes back, with no card: the tray and panel already say
+    it, and a Wi-Fi blip would make it noise.
   - **Dismissed stays dismissed while the outage lasts**, and is forgotten when
     it clears, so the next outage of the same kind pops again. A dismissal
     remembers the _peak_ (worst level, every incident), so a level flapping
@@ -227,8 +234,17 @@ is split by what changes together, and should stay that way:
     passed to `reconcile` as `suspended`: off screen, dismissal kept. Treating
     "not checked right now" as "recovered" re-popped every dismissed outage
     after a Wi-Fi blip.
+  - **A page that can't be read holds its card; it doesn't clear it.** A status
+    page buckling in a big outage is the normal case, not the odd one. When a
+    service's page can't be read (two failed fetches), `reconcile` is told it is
+    `held`: a card on screen stays, a dismissal is kept, and nothing is
+    announced. Without that the card vanished, which reads as all clear, and
+    the same outage popped again when the page came back. Maintenance is the
+    other not-quite-fine reading: that service is `suspended` (off screen,
+    dismissal kept) and its episode stays open.
   - **It doesn't pop over an open panel.** The panel already says it; the
-    alerts are acknowledged instead (`prepare_popup` returns `false`).
+    alerts are acknowledged instead (`prepare_popup` returns `false`), and so
+    are any resolved cards.
   - **It doesn't auto-hide on a timer.** Outages matter most when you were
     away from the desk, which is exactly when a timed toast would be gone.
     It is not a native OS notification: those land in the OS notification
@@ -236,6 +252,26 @@ is split by what changes together, and should stay that way:
     with a link on it, which this app draws and controls itself. Phase 2 still
     has to persist what has been shown, so a relaunch mid-incident doesn't pop
     it again (task-tracker's persisted `last_check_in`).
+- **The app remembers troubles, and only a good reading ends one.**
+  `episodes.ts` opens an `Episode` when a check first sees a service in
+  trouble (start, worst level, what the vendor said) and closes it only when a
+  later check positively sees the service fine; that is what makes the
+  resolved card. Four things are deliberately _not_ endings, each a way of
+  announcing a recovery that hadn't happened: **blind** (two failed fetches, or
+  a value the adapter can't place: status pages are the first thing to buckle
+  in a big outage, so "can't reach it" must never read as "it's back"; see
+  `sightService`), **maintenance** (the page isn't quiet), **removed** (a
+  service dropped from the list takes its episode with it), and **the
+  connection** (only services are sighted). Time is the time of the _readings_:
+  an episode starts at the first fetch that saw it and `lastSeenAt` moves only
+  when a fetch sees it again (`ServiceState.checkedAt`), so a weekend asleep
+  isn't "seen for two days", and the card says "seen for" because the vendor
+  may have started earlier. Statuspage drops an incident from the summary a
+  poll before its components clear, so an incident's name is kept over the
+  component list that replaces it. The memory is in RAM: a relaunch forgets it
+  (phase 2 puts it in `state.json` with the popup state), and an episode plus
+  its `endedAt` (a `Resolution`) is plain data, so that, and the history log,
+  are a write rather than a redesign.
 - **The popup never takes focus.** It arrives from a timer while you are typing
   somewhere else. `prepare_popup` calls `set_focusable(false)` before
   `reveal_popup` calls `show()`, which on Windows is `WS_EX_NOACTIVATE`, so the
