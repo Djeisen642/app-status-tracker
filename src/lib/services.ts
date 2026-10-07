@@ -52,6 +52,8 @@ export interface ServiceState {
   /** The last good reading, kept through a single failed fetch. */
   readonly snapshot: Snapshot | null;
   readonly etag: string | null;
+  /** Epoch ms of the last fetch that read the page, kept through failed ones. 0 before the first. */
+  readonly checkedAt: number;
   /** Consecutive failed fetches. */
   readonly failures: number;
   readonly lastError: string | null;
@@ -62,6 +64,7 @@ export interface ServiceState {
 export const INITIAL_SERVICE: ServiceState = {
   snapshot: null,
   etag: null,
+  checkedAt: 0,
   failures: 0,
   lastError: null,
   nextAt: 0,
@@ -109,6 +112,7 @@ export function applyFetch(
   const succeed = (snapshot: Snapshot | null, etag: string | null): ServiceState => ({
     snapshot,
     etag,
+    checkedAt: now,
     failures: 0,
     lastError: null,
     nextAt: now + withJitter(POLL_INTERVAL, POLL_JITTER, rand),
@@ -150,7 +154,6 @@ export function serviceAlert(service: ServiceConfig, state: ServiceState): Alert
   return {
     key: ['service', service.id, level, ...incidentIds].join(':'),
     group: serviceGroup(service),
-    subject: service.name,
     level,
     incidents: incidentIds,
     title: `${service.name}: ${LEVEL_LABELS[level]}`,
@@ -165,18 +168,21 @@ function serviceGroup(service: ServiceConfig): string {
 }
 
 /**
- * What this service's latest reading says, for the memory of troubles.
+ * What this service's latest reading says, for the memory of troubles and for
+ * what the popup does with its card.
  *
- * `blind` is anything short of a reading: nothing yet, or two failed fetches,
- * or a value the adapter couldn't place. Only `fine` may end an episode, so a
- * vendor whose status page is struggling never reads as recovered.
+ * Only `fine` may end an episode. `blind` is anything short of a reading:
+ * nothing yet, two failed fetches, or a value the adapter couldn't place.
+ * `maintenance` is a reading, but not an all-clear.
  */
 export function sightService(service: ServiceConfig, state: ServiceState): Sighting {
   const group = serviceGroup(service);
   const level = displayLevel(state);
-  if (level === null || level === 'unknown') return { group, kind: 'blind' };
+  if (level === null || level === 'unknown') return { kind: 'blind', group };
+  if (level === 'maintenance') return { kind: 'maintenance', group };
   const alert = serviceAlert(service, state);
-  return alert === null ? { group, kind: 'fine' } : { group, kind: 'bad', alert };
+  if (alert === null) return { kind: 'fine', group };
+  return { kind: 'bad', alert, subject: service.name, readAt: state.checkedAt };
 }
 
 /** The most specific thing there is to say: the incident, else what's affected. */

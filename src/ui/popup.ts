@@ -16,6 +16,7 @@ import {
   visible,
   type Alert,
   type PopupState,
+  type ReconcileOptions,
 } from '../lib/alerts.ts';
 import { describeError } from '../lib/errors.ts';
 import { toneOf } from '../lib/summary.ts';
@@ -36,14 +37,11 @@ export class Popup {
 
   /**
    * Bring the popup in line with what is wrong now: raise it, update it, or
-   * close it. `resolved` are the cards for troubles that were just seen to end.
+   * close it. `options` says what can't be judged right now, and which
+   * troubles were just seen to end (see `reconcile`).
    */
-  async sync(
-    active: readonly Alert[],
-    suspended: readonly Alert[],
-    resolved: readonly Alert[] = [],
-  ): Promise<void> {
-    const { state, raised } = reconcile(this.state, active, suspended, resolved);
+  async sync(active: readonly Alert[], options: ReconcileOptions = {}): Promise<void> {
+    const { state, raised } = reconcile(this.state, active, options);
     this.state = state;
     this.draw();
 
@@ -60,8 +58,8 @@ export class Popup {
    * Take in what is wrong now as already seen, without showing it: the user
    * was just told (they added the page).
    */
-  acknowledgeAll(active: readonly Alert[], suspended: readonly Alert[]): void {
-    this.state = acknowledge(reconcile(this.state, active, suspended).state);
+  acknowledgeAll(active: readonly Alert[], options: ReconcileOptions = {}): void {
+    this.state = acknowledge(reconcile(this.state, active, options).state);
     this.draw();
   }
 

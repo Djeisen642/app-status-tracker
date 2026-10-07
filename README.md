@@ -108,13 +108,17 @@ largest screen:
 - **It doesn't take your keyboard.** It shows up over whatever you're typing
   into and leaves the focus there.
 - **It appears once per outage.** Close it with × and it stays closed until
-  the next outage. A worse level or a new incident is a new outage.
-- **It tells you when it's over.** The app remembers that a page was reporting
-  an issue, and when a later check sees the page fine again, the card becomes
-  a green "resolved" one: what the incident was, how bad it got, and how long
-  the app saw it. It stays until you close it, and it comes even if you had
-  dismissed the outage. A page that merely can't be reached is not "resolved",
-  and the app forgets what it saw if it's restarted.
+  the next outage, even if the page goes unreachable and comes back in the
+  middle of it. A worse level or a new incident is a new outage.
+- **It tells you when a service's issue is over.** The app remembers that a
+  page was reporting an issue, and when a later check sees the page fully
+  operational again, the card becomes a green "resolved" one: what the
+  incident was, how bad it got, and how long the app saw it. It stays until
+  you close it, and it comes even if you had dismissed the outage. A page that
+  can't be reached, or has moved into maintenance, is not "resolved", and the
+  app forgets what it saw if it's restarted.
+- **The internet popup just closes** when the connection comes back; there is
+  no card for that, since the tray already says it.
 - **It stays until you deal with it.** It doesn't fade out on a timer, because
   an outage matters most when you were away from the desk.
 - **Click it to open the full panel.** It doesn't appear at all while the

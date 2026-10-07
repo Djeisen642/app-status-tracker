@@ -27,8 +27,6 @@ export interface Alert {
    * other rather than treated as strangers (see `escalates`).
    */
   readonly group: string;
-  /** What it is about, as a name: "GitHub", "Internet". */
-  readonly subject: string;
   readonly level: Level;
   /** Open incident ids, so a *new* incident can be told from an old one. */
   readonly incidents: readonly string[];
@@ -56,7 +54,6 @@ export function connectivityAlert(
       return {
         key: 'internet:offline',
         group: 'internet',
-        subject: 'Internet',
         level: 'major',
         incidents: [],
         title: 'No internet connection',
@@ -67,7 +64,6 @@ export function connectivityAlert(
       return {
         key: 'internet:portal',
         group: 'internet',
-        subject: 'Internet',
         level: 'degraded',
         incidents: [],
         title: 'Wi-Fi sign-in required',
@@ -121,6 +117,23 @@ export function escalates(seen: Alert, next: Alert): boolean {
   );
 }
 
+export interface ReconcileOptions {
+  /**
+   * Groups whose trouble isn't known to be over but shouldn't be on screen:
+   * the connection is down, or the page has moved into maintenance. Taken off
+   * screen, dismissal kept.
+   */
+  readonly suspended?: readonly string[];
+  /**
+   * Groups that can't be judged right now because their page can't be read:
+   * left exactly as they are, on screen or dismissed. Not being able to see
+   * is not the same as it being over.
+   */
+  readonly held?: readonly string[];
+  /** Cards for troubles that were seen to end. */
+  readonly resolved?: readonly Alert[];
+}
+
 /**
  * Fold what is wrong right now into the popup.
  *
@@ -134,6 +147,10 @@ export function escalates(seen: Alert, next: Alert): boolean {
  *   but keeps its dismissal. Treating "not checked right now" as "recovered"
  *   was the other bug the review found: a Wi-Fi blip re-popped every
  *   dismissed outage.
+ * - A *held* group (a service whose page can't be read) keeps whatever it
+ *   had. A page buckling in a big outage must not make the card vanish, which
+ *   reads as all clear, or forget a dismissal, which re-pops the same outage
+ *   when the page returns.
  * - A *resolved* card arrives for a group whose trouble was seen to end. It
  *   comes forward like any news, replaces an older card for the same group,
  *   and goes away if that group turns bad again (it would be a lie by then).
@@ -143,17 +160,21 @@ export function escalates(seen: Alert, next: Alert): boolean {
 export function reconcile(
   state: PopupState,
   active: readonly Alert[],
-  suspended: readonly Alert[] = [],
-  resolved: readonly Alert[] = [],
+  options: ReconcileOptions = {},
 ): Reconciled {
-  const suspendedGroups = new Set(suspended.map((alert) => alert.group));
+  const suspendedGroups = new Set(options.suspended ?? []);
+  const heldGroups = new Set(options.held ?? []);
+  const resolved = options.resolved ?? [];
 
   const shown: Alert[] = [];
   let raised = false;
   // Keep what was already on screen in its place, updated.
   for (const previous of state.shown) {
     const next = active.find((alert) => alert.group === previous.group);
-    if (next === undefined) continue;
+    if (next === undefined) {
+      if (heldGroups.has(previous.group)) shown.push(previous);
+      continue;
+    }
     if (escalates(previous, next)) raised = true;
     shown.push(next);
   }
@@ -162,7 +183,9 @@ export function reconcile(
   for (const previous of state.dismissed) {
     const next = active.find((alert) => alert.group === previous.group);
     if (next === undefined) {
-      if (suspendedGroups.has(previous.group)) dismissed.push(previous);
+      if (suspendedGroups.has(previous.group) || heldGroups.has(previous.group)) {
+        dismissed.push(previous);
+      }
       continue;
     }
     if (escalates(previous, next)) {

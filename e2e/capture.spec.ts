@@ -46,6 +46,9 @@ for (const colorScheme of ['light', 'dark'] as const) {
     // The real capture, then the page clearing: SYNTHETIC all-operational, see `setCursor`.
     await startApp(page, { cursor: 'incident' });
     await expect(page.locator('#popup')).toContainText('Cursor: degraded');
+    // Seen again a minute on, so the card has a span to report.
+    await advanceToNextCheck(page, 30);
+    await advanceToNextCheck(page, 30);
     await setCursor(page, 'operational');
     await advanceToNextCheck(page, 30);
     await advanceToNextCheck(page, 30);
