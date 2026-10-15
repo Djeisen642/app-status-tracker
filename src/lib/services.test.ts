@@ -16,6 +16,7 @@ import {
   serviceAlert,
   rowView,
   serviceSubtitle,
+  sightService,
   sortByUrgency,
   type FetchOutcome,
   type RowView,
@@ -122,6 +123,13 @@ describe('applyFetch', () => {
       () => 0.999999,
     );
     expect(state.nextAt).toBe(1000 + POLL_INTERVAL + POLL_JITTER - 1);
+  });
+
+  it('dates the reading, and keeps the date through a failure', () => {
+    const read = applyFetch(GITHUB, INITIAL_SERVICE, ok(GITHUB_OPERATIONAL), 5_000, noJitter);
+    expect(read.checkedAt).toBe(5_000);
+    expect(applyFetch(GITHUB, read, failed, 9_000, noJitter).checkedAt).toBe(5_000);
+    expect(INITIAL_SERVICE.checkedAt).toBe(0);
   });
 
   it('keeps the reading on a 304, which is what sending the ETag earns', () => {
@@ -231,6 +239,65 @@ describe('serviceAlert (synthetic outage variants of the real capture)', () => {
   it('does not pop for maintenance, or for a page it cannot read', () => {
     expect(serviceAlert(GITHUB, run([ok(githubWith('under_maintenance'))]))).toBeNull();
     expect(serviceAlert(GITHUB, run([ok(GITHUB_OPERATIONAL), failed, failed]))).toBeNull();
+  });
+});
+
+describe('sightService', () => {
+  const group = 'service:github';
+
+  it('sees a service in trouble, with its alert, its name and when it was read', () => {
+    const state = applyFetch(
+      GITHUB,
+      INITIAL_SERVICE,
+      ok(githubWith('major_outage')),
+      7_000,
+      noJitter,
+    );
+    expect(sightService(GITHUB, state)).toEqual({
+      kind: 'bad',
+      alert: serviceAlert(GITHUB, state),
+      subject: 'GitHub',
+      readAt: 7_000,
+    });
+  });
+
+  it('sees the real all-green capture as fine', () => {
+    expect(sightService(GITHUB, run([ok(GITHUB_OPERATIONAL)]))).toEqual({ kind: 'fine', group });
+  });
+
+  it('does not take maintenance for an all-clear', () => {
+    expect(sightService(GITHUB, run([ok(githubWith('under_maintenance'))]))).toEqual({
+      kind: 'maintenance',
+      group,
+    });
+  });
+
+  it('is blind before the first answer, and never fine', () => {
+    expect(sightService(GITHUB, INITIAL_SERVICE)).toEqual({ kind: 'blind', group });
+  });
+
+  it('keeps the last reading through one failed fetch, then goes blind', () => {
+    const outage = ok(githubWith('major_outage'));
+    expect(sightService(GITHUB, run([outage, failed])).kind).toBe('bad');
+    expect(sightService(GITHUB, run([outage, failed, failed]))).toEqual({ kind: 'blind', group });
+  });
+
+  it('is blind, not fine, for a page that parses but says nothing it knows', () => {
+    const body = githubWith('some_future_status');
+    expect(sightService(GITHUB, run([ok(body)]))).toEqual({ kind: 'blind', group });
+  });
+
+  it('dates a reading by the fetch that made it, not by the check that repeated it', () => {
+    const read = applyFetch(
+      GITHUB,
+      INITIAL_SERVICE,
+      ok(githubWith('major_outage')),
+      1_000,
+      noJitter,
+    );
+    const failedOnce = applyFetch(GITHUB, read, failed, 99_000, noJitter);
+    const seen = sightService(GITHUB, failedOnce);
+    expect(seen.kind === 'bad' && seen.readAt).toBe(1_000);
   });
 });
 

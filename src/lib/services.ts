@@ -8,6 +8,7 @@
 
 import type { Alert } from './alerts.ts';
 import type { Connectivity } from './connectivity.ts';
+import type { Sighting } from './episodes.ts';
 import { parseStatuspageSummary, type Snapshot } from './adapters/statuspage.ts';
 import { withJitter } from './jitter.ts';
 import { LEVEL_LABELS, LEVELS, type Level } from './status.ts';
@@ -51,6 +52,8 @@ export interface ServiceState {
   /** The last good reading, kept through a single failed fetch. */
   readonly snapshot: Snapshot | null;
   readonly etag: string | null;
+  /** Epoch ms of the last fetch that read the page, kept through failed ones. 0 before the first. */
+  readonly checkedAt: number;
   /** Consecutive failed fetches. */
   readonly failures: number;
   readonly lastError: string | null;
@@ -61,6 +64,7 @@ export interface ServiceState {
 export const INITIAL_SERVICE: ServiceState = {
   snapshot: null,
   etag: null,
+  checkedAt: 0,
   failures: 0,
   lastError: null,
   nextAt: 0,
@@ -108,6 +112,7 @@ export function applyFetch(
   const succeed = (snapshot: Snapshot | null, etag: string | null): ServiceState => ({
     snapshot,
     etag,
+    checkedAt: now,
     failures: 0,
     lastError: null,
     nextAt: now + withJitter(POLL_INTERVAL, POLL_JITTER, rand),
@@ -148,13 +153,36 @@ export function serviceAlert(service: ServiceConfig, state: ServiceState): Alert
   const incidentIds = snapshot.incidents.map((incident) => incident.id).sort();
   return {
     key: ['service', service.id, level, ...incidentIds].join(':'),
-    group: `service:${service.id}`,
+    group: serviceGroup(service),
     level,
     incidents: incidentIds,
     title: `${service.name}: ${LEVEL_LABELS[level]}`,
     detail: serviceDetail(snapshot),
     link: { label: 'View status page', url: service.pageUrl },
   };
+}
+
+/** The alert group for one service: its alerts are compared with each other, not strangers'. */
+function serviceGroup(service: ServiceConfig): string {
+  return `service:${service.id}`;
+}
+
+/**
+ * What this service's latest reading says, for the memory of troubles and for
+ * what the popup does with its card.
+ *
+ * Only `fine` may end an episode. `blind` is anything short of a reading:
+ * nothing yet, two failed fetches, or a value the adapter couldn't place.
+ * `maintenance` is a reading, but not an all-clear.
+ */
+export function sightService(service: ServiceConfig, state: ServiceState): Sighting {
+  const group = serviceGroup(service);
+  const level = displayLevel(state);
+  if (level === null || level === 'unknown') return { kind: 'blind', group };
+  if (level === 'maintenance') return { kind: 'maintenance', group };
+  const alert = serviceAlert(service, state);
+  if (alert === null) return { kind: 'fine', group };
+  return { kind: 'bad', alert, subject: service.name, readAt: state.checkedAt };
 }
 
 /** The most specific thing there is to say: the incident, else what's affected. */

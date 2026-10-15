@@ -18,7 +18,7 @@ Status keys: **done** · **partial** · **todo**
 | done   | Opaque, frameless panel that opens next to the tray icon that was clicked (parked top-right of the largest display until the first tray event, or on Linux where a click may never arrive); closes on Esc or ×.                                                                                                                                                                                                                                     |
 | done   | The status model (`Level`, `worstLevel`) and the tray line (`formatTrayStatus`), tested.                                                                                                                                                                                                                                                                                                                                                            |
 | done   | **Internet connection check.** Plain-HTTP probes to Google's and Microsoft's connectivity endpoints, made from Rust (`probe.rs`, no redirects followed, 5s timeout, 1 KB body cap) and judged in `connectivity.ts`. Online if either answers correctly, captive portal if an answer is wrong or a redirect, offline after two failed rounds (or at once if the OS reports no network). Shown as the panel's first row and overriding the tray line. |
-| done   | **A popup when a check goes bad.** The window shrinks to a small card in the top-right corner, shown without taking focus, with a link to the page that explains it. Pops on a transition, closes itself on recovery, stays dismissed until the next outage, doesn't pop over an open panel. Clicking it opens the panel. The internet check is the only check wired to it so far; services join in phase 1.                                        |
+| done   | **A popup when a check goes bad.** The window shrinks to a small card in the top-right corner, shown without taking focus, with a link to the page that explains it. Pops on a transition, closes itself on recovery stays dismissed until the next outage, doesn't pop over an open panel. Clicking it opens the panel.                                                                                                                            |
 | done   | Two icon masters, with the small one hand-tuned for 16–32px.                                                                                                                                                                                                                                                                                                                                                                                        |
 
 ## Above the MVP line
@@ -38,10 +38,11 @@ Status keys: **done** · **partial** · **todo**
 
 ### Phase 2: tell me when it changes
 
-| Status | Item                                                                                                                                       |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| todo   | Popup state persisted to `state.json` (atomic write), so a relaunch mid-incident doesn't pop again for the incident you already dismissed. |
-| todo   | Settle the history log format (see below) so nothing is lost before it's built.                                                            |
+| Status | Item                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| done   | **A resolved card when an issue ends.** `episodes.ts` remembers each service's trouble (first seen, last seen, worst level, what the incident was) and closes it only on a fully operational reading, never on a page that can't be read, one in maintenance, or a service that was removed; the popup shows the ending as a green card that stays until dismissed. A page that can't be read also holds its outage card and dismissal instead of clearing them. In memory only; covered by unit and browser e2e tests, never run on a desktop. |
+| todo   | Popup state **and the open episodes** persisted to `state.json` (atomic write), so a relaunch mid-incident doesn't pop again for the incident you already dismissed, and its ending is still announced (timed from the relaunch today).                                                                                                                                                                                                                                                                                                         |
+| todo   | Settle the history log format (see below) so nothing is lost before it's built. A closed `Resolution` (an `Episode` and its `endedAt`) already is one row of it: service, first and last seen, peak, detail, and the end.                                                                                                                                                                                                                                                                                                                       |
 
 ### Phase 3: settings
 
@@ -130,6 +131,10 @@ desktop webview.
   that combination leaves your keyboard where it was is the first thing to
   check on a real desktop: type into another app while pulling the network
   cable. macOS and Linux implement `set_focusable` differently again.
+- **A resolved card in the non-focusable popup.** It rides the same
+  `prepare_popup` / `reveal_popup` path as an outage card, so the same unknowns
+  apply (focus, first frame, clicks); nothing about it is new, and none of it
+  has been run on a desktop.
 - **Clicking a non-activating window.** The popup's × and link have to work
   in a window that refuses activation. WebView2 should still deliver the
   clicks; nobody has tried it.

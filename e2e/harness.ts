@@ -27,24 +27,31 @@ export type Network = 'up' | 'down';
  * `operational` is the real capture in `fixtures/`, served as-is. `outage` is
  * SYNTHETIC: that capture with Actions set to `major_outage`, Statuspage's
  * documented value, for driving the UI through a bad state. It proves the app
- * reacts to the value, not that GitHub's API sends it that way. `down` fails
- * the request outright.
+ * reacts to the value, not that GitHub's API sends it that way. `degraded` and
+ * `maintenance` are the same with Actions `degraded_performance` and
+ * `under_maintenance`. `down` fails the request outright.
  */
-export type GitHubState = 'operational' | 'outage' | 'degraded' | 'down';
+export type GitHubState = 'operational' | 'outage' | 'degraded' | 'maintenance' | 'down';
 
 const GITHUB_OPERATIONAL = readFileSync(
   new URL('../fixtures/statuspage/github-2026-09-25-operational.json', import.meta.url),
   'utf8',
 );
 
-function githubBody(state: 'operational' | 'outage' | 'degraded'): string {
+const ACTIONS_STATUS = {
+  outage: 'major_outage',
+  degraded: 'degraded_performance',
+  maintenance: 'under_maintenance',
+} as const;
+
+function githubBody(state: 'operational' | keyof typeof ACTIONS_STATUS): string {
   if (state === 'operational') return GITHUB_OPERATIONAL;
   const summary = JSON.parse(GITHUB_OPERATIONAL) as {
     components: { name: string; status: string }[];
   };
   for (const component of summary.components) {
     if (component.name === 'Actions') {
-      component.status = state === 'outage' ? 'major_outage' : 'degraded_performance';
+      component.status = ACTIONS_STATUS[state];
     }
   }
   return JSON.stringify(summary);

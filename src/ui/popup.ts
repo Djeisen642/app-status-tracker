@@ -13,8 +13,10 @@ import {
   dismiss,
   EMPTY_POPUP,
   reconcile,
+  visible,
   type Alert,
   type PopupState,
+  type ReconcileOptions,
 } from '../lib/alerts.ts';
 import { describeError } from '../lib/errors.ts';
 import { toneOf } from '../lib/summary.ts';
@@ -33,13 +35,17 @@ export class Popup {
     private readonly openLink: (url: string) => void,
   ) {}
 
-  /** Bring the popup in line with what is wrong now: raise it, update it, or close it. */
-  async sync(active: readonly Alert[], suspended: readonly Alert[]): Promise<void> {
-    const { state, raised } = reconcile(this.state, active, suspended);
+  /**
+   * Bring the popup in line with what is wrong now: raise it, update it, or
+   * close it. `options` says what can't be judged right now, and which
+   * troubles were just seen to end (see `reconcile`).
+   */
+  async sync(active: readonly Alert[], options: ReconcileOptions = {}): Promise<void> {
+    const { state, raised } = reconcile(this.state, active, options);
     this.state = state;
     this.draw();
 
-    if (this.state.shown.length === 0) {
+    if (visible(this.state).length === 0) {
       if (isPopupMode()) await this.close();
       return;
     }
@@ -52,8 +58,8 @@ export class Popup {
    * Take in what is wrong now as already seen, without showing it: the user
    * was just told (they added the page).
    */
-  acknowledgeAll(active: readonly Alert[], suspended: readonly Alert[]): void {
-    this.state = acknowledge(reconcile(this.state, active, suspended).state);
+  acknowledgeAll(active: readonly Alert[], options: ReconcileOptions = {}): void {
+    this.state = acknowledge(reconcile(this.state, active, options).state);
     this.draw();
   }
 
@@ -100,7 +106,7 @@ export class Popup {
   private async dismiss(key: string): Promise<void> {
     this.state = dismiss(this.state, key);
     this.draw();
-    if (this.state.shown.length === 0) await this.close();
+    if (visible(this.state).length === 0) await this.close();
     else await this.show();
   }
 
@@ -112,10 +118,11 @@ export class Popup {
 
   /** Rebuilt only when what it says changed, so a click isn't lost to a redraw. */
   private draw(): void {
-    const drawn = JSON.stringify(this.state.shown.map((alert) => [alert.key, alert.detail]));
+    const cards = visible(this.state);
+    const drawn = JSON.stringify(cards.map((alert) => [alert.key, alert.detail]));
     if (drawn === this.drawn) return;
     this.drawn = drawn;
-    this.list.replaceChildren(...this.state.shown.map((alert) => this.card(alert)));
+    this.list.replaceChildren(...cards.map((alert) => this.card(alert)));
   }
 
   /** One alert. Everything in it came off the network: `textContent` only. */
